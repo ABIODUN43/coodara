@@ -1,0 +1,12 @@
+{
+	"name": "codara",
+	"private": true,
+	"packageManager": "pnpm@11.12.0",
+	"scripts": {
+	  "dev": "pnpm --filter frontend dev",
+	  "build": "pnpm --recursive build",
+	  "lint": "pnpm --recursive lint",
+	  "format": "prettier --write .",
+	  "typecheck": "pnpm --recursive typecheck"
+	}
+  }
