@@ -1,21 +1,15 @@
 import logo from "@/assets/images/codara-logo.png";
 
-interface LogoProps {
-  size?: number;
-}
-
-export function Logo({ size = 42 }: LogoProps) {
+export function Logo() {
   return (
     <div className="flex items-center gap-3">
       <img
         src={logo}
         alt="Codara"
-        width={size}
-        height={size}
-        className="rounded-lg"
+        className="h-10 w-10"
       />
 
-      <span className="text-xl font-bold tracking-tight">
+      <span className="text-2xl font-bold">
         CODARA
       </span>
     </div>
