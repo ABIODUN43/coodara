@@ -3,7 +3,7 @@ Authentication business logic.
 
 Responsible for:
 
-- User authentication
+- GitHub authentication
 - User creation
 - Session management
 - Token refresh
@@ -19,15 +19,20 @@ Last Updated:
     July 2026
 """
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.jwt_service import (
+    JWTService,
+)
+
 from app.models.user import User
-from app.models.session import Session
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    verify_token,
+
+from app.repositories.user_repository import (
+    UserRepository,
+)
+
+from app.repositories.session_repository import (
+    SessionRepository,
 )
 
 
@@ -45,63 +50,57 @@ class AuthService:
         github_user: dict,
     ) -> User:
         """
-    Authenticate or create a GitHub user.
+        Authenticate a GitHub user.
 
-    If the user exists:
-        - Update profile data.
+        Creates a new user if one does
+        not already exist.
 
-    If the user does not exist:
-        - Create a new user.
+        Updates profile information
+        when the user already exists.
+        """
 
-    Returns:
-        User instance.
-    """
+        user_repository = UserRepository(db)
 
-        stmt = select(User).where(
-            User.github_id ==
-            github_user["github_id"]
+        user = (
+            await user_repository
+            .get_by_github_id(
+                github_user["github_id"]
+            )
         )
-
-        result = await db.execute(stmt)
-
-        user = result.scalar_one_or_none()
 
         if user:
 
-            user.username = github_user[
-                "username"
-            ]
+            return await (
+                user_repository.update(
+                    user,
+                    username=github_user[
+                        "username"
+                    ],
+                    email=github_user[
+                        "email"
+                    ],
+                    avatar_url=github_user[
+                        "avatar_url"
+                    ],
+                )
+            )
 
-            user.email = github_user["email"]
-
-            user.avatar_url = github_user[
-                "avatar_url"
-            ]
-
-            await db.commit()
-            await db.refresh(user)
-
-            return user
-
-        user = User(
-            github_id=github_user[
-                "github_id"
-            ],
-            username=github_user[
-                "username"
-            ],
-            email=github_user["email"],
-            avatar_url=github_user[
-                "avatar_url"
-            ],
+        return await (
+            user_repository.create(
+                github_id=github_user[
+                    "github_id"
+                ],
+                username=github_user[
+                    "username"
+                ],
+                email=github_user[
+                    "email"
+                ],
+                avatar_url=github_user[
+                    "avatar_url"
+                ],
+            )
         )
-
-        db.add(user)
-
-        await db.commit()
-        await db.refresh(user)
-
-        return user
 
     async def create_session(
         self,
@@ -109,43 +108,30 @@ class AuthService:
         user: User,
     ) -> dict:
         """
-    Create a new authenticated session.
-
-    Generates:
-    - Access Token
-    - Refresh Token
-
-    Persists refresh token
-    in the database.
-
-    Returns:
-        Token pair.
-    """
-
-        access_token = create_access_token(
-            {
-                "sub": str(user.id),
-                "username":
-                    user.username,
-            }
-        )
-
-        refresh_token = (
-            create_refresh_token(
-                {
-                    "sub": str(user.id)
-                }
+        Create a new authenticated
+        session for a user.
+        """
+        access_token = (
+            JWTService.create_access_token(
+                user_id=user.id,
+                username=user.username,
             )
         )
 
-        session = Session(
+        refresh_token = (
+            JWTService.create_refresh_token(
+                user_id=user.id,
+            )
+        )
+
+        session_repository = (
+            SessionRepository(db)
+        )
+
+        await session_repository.create(
             user_id=user.id,
             refresh_token=refresh_token,
         )
-
-        db.add(session)
-
-        await db.commit()
 
         return {
             "access_token":
@@ -156,28 +142,31 @@ class AuthService:
 
     async def refresh_access_token(
         self,
-        token: str,
+        refresh_token: str,
     ) -> str:
         """
-    Generate a new access token using
-    a valid refresh token.
+        Generate a new access token
+        from a valid refresh token.
+        """
 
-    Returns:
-        New access token.
-    """
-
-        payload = verify_token(
-            token,
-            token_type="refresh",
+        payload = (
+            JWTService.verify_token(
+                refresh_token,
+                token_type="refresh",
+            )
         )
 
-        user_id = payload["sub"]
-
-        return create_access_token(
-            {
-                "sub": user_id,
-            }
-        )
+        return (
+            JWTService.create_access_token(
+                user_id=int(
+                payload["sub"]
+        ),
+        username=payload.get(
+            "username",
+            "",
+        ),
+    )
+)
 
     async def logout_user(
         self,
@@ -185,27 +174,27 @@ class AuthService:
         refresh_token: str,
     ) -> None:
         """
-    Invalidate an active user session.
+        Invalidate an active session.
+        """
 
-    Removes:
-    - Refresh token
-    - Session record
-    """
-
-        stmt = select(Session).where(
-            Session.refresh_token ==
-            refresh_token
+        session_repository = (
+            SessionRepository(db)
         )
 
-        result = await db.execute(stmt)
-
         session = (
-            result.scalar_one_or_none()
+            await session_repository
+            .get_by_refresh_token(
+                refresh_token
+            )
         )
 
         if session:
-            await db.delete(session)
-            await db.commit()
+
+            await (
+                session_repository.delete(
+                    session.id
+                )
+            )
 
 
 auth_service = AuthService()
