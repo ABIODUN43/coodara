@@ -1,52 +1,46 @@
 import { FadeIn } from "@/components/common/FadeIn";
-
 import { Navbar } from "../components/Navbar";
 import { Hero } from "../components/Hero";
-import { Features } from "../components/Features";
-import { ArchitectureDemo } from "../components/ArchitectureDemo";
+import { MarqueeSection } from "../components/MarqueeSection";
+import { ToolchainSection } from "../components/ToolchainSection";
 import { HowItWorks } from "../components/HowItWorks";
-import { TrustedBy } from "../components/TrustedBy";
-import { Testimonials } from "../components/Testimonials";
-import { FAQ } from "../components/FAQ";
-import { CTA } from "../components/CTA";
+import { FeaturesSection } from "../components/FeaturesSection";
+import { ArchitectChat } from "../components/ArchitectChat";
+import { EnterpriseSection } from "../components/EnterpriseSection";
+import { FinalCTA } from "../components/FinalCTA";
 import { Footer } from "../components/Footer";
+import { GithubAnalysis } from "../components/GithubAnalysis";
 
 export function LandingPage() {
     return (
-        <>
+        <div className="bg-[#fcf8fa]">
             <Navbar />
-
             <Hero />
-
             <FadeIn>
-                <Features />
+                <MarqueeSection />
             </FadeIn>
-
+            <GithubAnalysis />
             <FadeIn>
-                <ArchitectureDemo />
+                <ToolchainSection />
             </FadeIn>
-
             <FadeIn>
                 <HowItWorks />
             </FadeIn>
-
             <FadeIn>
-                <TrustedBy />
+                <FeaturesSection />
             </FadeIn>
-
             <FadeIn>
-                <Testimonials />
+                <ArchitectChat />
             </FadeIn>
-
             <FadeIn>
-                <FAQ />
+                <EnterpriseSection />
             </FadeIn>
-
             <FadeIn>
-                <CTA />
+                <FinalCTA />
+            </FadeIn>  
+            <FadeIn>
+                <Footer />
             </FadeIn>
-
-            <Footer />
-        </>
+        </div>
     );
 }

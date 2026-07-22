@@ -1,54 +1,42 @@
-import { Container } from "@/components/layouts/Container";
+import { Logo } from "@/components/common/Logo";
+
+const COLUMNS = [
+  { title: "Product", links: ["Features", "Pricing", "Enterprise"] },
+  { title: "Resources", links: ["Blog", "Documentation", "API"] },
+  { title: "Company", links: ["About", "Careers", "Contact"] },
+  { title: "Legal", links: ["Privacy", "Terms"] },
+];
 
 export function Footer() {
+  const currentYear = new Date().getFullYear();
+
   return (
-    <footer className="border-t py-16">
-      <Container>
-        <div className="grid gap-8 md:grid-cols-4">
-          <div>
-            <h3 className="mb-4 font-semibold">Company</h3>
-
+    <footer className="w-full border-t border-slate-200 bg-white">
+      <div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-8 px-4  py-16 sm:px-8 md:grid-cols-4">
+        {COLUMNS.map((column) => (
+          <div key={column.title}>
+            <p className="mb-4 font-bold text-slate-900">{column.title}</p>
             <ul className="space-y-2">
-              <li>About</li>
-              <li>Careers</li>
-              <li>Blog</li>
+              {column.links.map((link) => (
+                <li key={link}>
+                  <a href="#" className="text-sm text-slate-500 transition-all duration-[600ms] hover:text-slate-900">
+                    {link}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
+        ))}
+      </div>
 
-          <div>
-            <h3 className="mb-4 font-semibold">Product</h3>
-
-            <ul className="space-y-2">
-              <li>Features</li>
-              <li>Pricing</li>
-              <li>Docs</li>
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="mb-4 font-semibold">Resources</h3>
-
-            <ul className="space-y-2">
-              <li>GitHub</li>
-              <li>API</li>
-            </ul>
-          </div>
-
-          <div className="mt-12 border-t border-zinc-800 pt-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm text-zinc-500">
-              © 2026 Codara. All rights reserved.
-            </p>
-
-              <div className="flex gap-6 text-sm text-zinc-500">
-                 <span>Privacy</span>
-                 <span>Terms</span>
-                 <span>Status</span>
-                 <span>GitHub</span>
-              </div>
+      <div className="mx-auto flex max-w-[1440px] flex-col items-center justify-center gap-1 border-t border-slate-200/30 px-4 py-6 sm:flex-row sm:justify-between sm:px-8">
+        <div className="flex items-center justify-center sm:justify-start">
+          <div className="sm:origin-left scale-60">
+            <Logo />
           </div>
         </div>
-
-      </Container>
+        <p className="text-sm text-slate-500">© {currentYear} Coodara Intelligence Inc.</p>
+      </div>
     </footer>
   );
 }

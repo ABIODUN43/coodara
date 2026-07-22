@@ -1,4 +1,4 @@
-import logo from "@/assets/images/codara-logo.png";
+import logo from "@/assets/images/coodara-logo.jpeg";
 
 export function Logo() {
   return (
@@ -9,8 +9,8 @@ export function Logo() {
         className="h-10 w-10"
       />
 
-      <span className="text-2xl font-bold">
-        CODARA
+      <span className="text-2xl font-bold text-black">
+        Coodara
       </span>
     </div>
   );
