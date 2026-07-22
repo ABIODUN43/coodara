@@ -1,7 +1,26 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
+
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+)
+
+
+ROOT_DIR = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
+    """
+    Application settings.
+
+    Loaded from environment variables
+    and the project root .env file.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=ROOT_DIR / ".env",
+        extra="ignore",
+    )
 
     APP_NAME: str = "Coodara"
     ENVIRONMENT: str = "development"
@@ -18,9 +37,6 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: str
     GITHUB_CLIENT_SECRET: str
     GITHUB_CALLBACK_URL: str
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()

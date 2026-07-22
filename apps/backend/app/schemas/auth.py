@@ -18,10 +18,11 @@ Last Updated:
     July 2026
 """
 
-from datetime import datetime
-from typing import Optional
+from pydantic import BaseModel, ConfigDict
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from app.schemas.user import (
+    UserResponse,
+)
 
 
 class TokenResponse(BaseModel):
@@ -54,22 +55,8 @@ class RefreshResponse(BaseModel):
     token_type: str = "bearer"
 
 
-class UserResponse(BaseModel):
-    """
-    Authenticated user information.
-    """
-
-    id: int
-    github_id: int
-    username: str
-    email: Optional[EmailStr] = None
-    avatar_url: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+class LogoutRequest(BaseModel):
+    refresh_token: str
 
 
 class LogoutResponse(BaseModel):
@@ -91,7 +78,7 @@ class ErrorResponse(BaseModel):
 
     success: bool = False
     message: str
-    error_code: Optional[str] = None
+    error_code: str | None = None
 
 
 class AuthenticatedUserResponse(
@@ -106,3 +93,12 @@ class AuthenticatedUserResponse(
     model_config = ConfigDict(
         from_attributes=True
     )
+    
+
+class AuthResponse(
+    BaseModel
+):
+    user: UserResponse
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
