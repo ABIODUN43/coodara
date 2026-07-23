@@ -4,6 +4,7 @@ import { Logo } from "@/components/common/Logo";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/layouts/Container";
 import { Menu, X } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const navLinks = [
   { label: "Product", href: "#product" },
@@ -40,12 +41,12 @@ export function Navbar() {
 
           {/* Desktop right side */}
           <div className="hidden items-center gap-4 md:flex">
-            <a
-              href="#login"
+            <Link
+              to="/login"
               className="text-sm font-medium text-zinc-500 transition-colors duration-[600ms] hover:text-black"
             >
               Login
-            </a>
+            </Link>
             <Button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition-colors duration-[600ms] hover:bg-zinc-800 cursor-pointer">
               Get Started
             </Button>
@@ -97,12 +98,13 @@ export function Navbar() {
                   transition={{ duration: 0.2, delay: 0.2 }}
                   className="mt-2 flex flex-col gap-3 border-t border-zinc-200 pt-4"
                 >
-                  <a
-                    href="#login"
+                  <Link
+                    to="/login"
                     className="text-sm font-medium text-zinc-600 transition-colors duration-[600ms] hover:text-black"
+                    onClick={() => setIsMobileMenuOpen(false)}
                   >
                     Login
-                  </a>
+                  </Link>
                   <Button className="w-full rounded-lg bg-black text-sm font-medium text-white transition-colors duration-[600ms] hover:bg-zinc-800 cursor-pointer">
                     Get Started
                   </Button>
