@@ -21,18 +21,18 @@ Last Updated:
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.jwt_service import (
-    JWTService,
-)
-
 from app.models.user import User
 
 from app.repositories.user_repository import (
     UserRepository,
 )
 
-from app.repositories.session_repository import (
-    SessionRepository,
+from app.redis.session import (
+    redis_session_service,
+)
+
+from app.services.jwt_service import (
+    JWTService,
 )
 
 
@@ -70,26 +70,8 @@ class AuthService:
 
         if user:
 
-            return await (
-                user_repository.update(
-                    user,
-                    username=github_user[
-                        "username"
-                    ],
-                    email=github_user[
-                        "email"
-                    ],
-                    avatar_url=github_user[
-                        "avatar_url"
-                    ],
-                )
-            )
-
-        return await (
-            user_repository.create(
-                github_id=github_user[
-                    "github_id"
-                ],
+            return await user_repository.update(
+                user,
                 username=github_user[
                     "username"
                 ],
@@ -100,17 +82,39 @@ class AuthService:
                     "avatar_url"
                 ],
             )
+
+        return await user_repository.create(
+            github_id=github_user[
+                "github_id"
+            ],
+            username=github_user[
+                "username"
+            ],
+            email=github_user[
+                "email"
+            ],
+            avatar_url=github_user[
+                "avatar_url"
+            ],
         )
 
     async def create_session(
         self,
-        db: AsyncSession,
         user: User,
     ) -> dict:
         """
         Create a new authenticated
         session for a user.
+
+        Generates:
+
+        - Access Token
+        - Refresh Token
+
+        Stores refresh token
+        in Redis.
         """
+
         access_token = (
             JWTService.create_access_token(
                 user_id=user.id,
@@ -124,77 +128,79 @@ class AuthService:
             )
         )
 
-        session_repository = (
-            SessionRepository(db)
-        )
-
-        await session_repository.create(
-            user_id=user.id,
-            refresh_token=refresh_token,
+        await (
+            redis_session_service
+            .create_session(
+                user_id=user.id,
+                refresh_token=refresh_token,
+            )
         )
 
         return {
-            "access_token":
-                access_token,
-            "refresh_token":
-                refresh_token,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
         }
 
     async def refresh_access_token(
         self,
+        db: AsyncSession,
         refresh_token: str,
     ) -> str:
         """
         Generate a new access token
         from a valid refresh token.
         """
+        payload = JWTService.verify_token(
+            refresh_token,
+            token_type="refresh",
+        )
+        exists = await redis_session_service.validate_session(
+            refresh_token
+        )
+        if not exists:
+            raise ValueError(
+                "Session expired."
+            )
+        user_id = int(
+            payload["sub"]
+        )
 
-        payload = (
-            JWTService.verify_token(
-                refresh_token,
-                token_type="refresh",
+        user_repository = (
+            UserRepository(db)
+        )
+
+        user = await (
+            user_repository.get_by_id(
+                user_id
             )
         )
 
+        if not user:
+            raise ValueError(
+                "User not found."
+            )
+
         return (
             JWTService.create_access_token(
-                user_id=int(
-                payload["sub"]
-        ),
-        username=payload.get(
-            "username",
-            "",
-        ),
-    )
-)
+                user_id=user.id,
+                username=user.username,
+            )
+        )
 
     async def logout_user(
         self,
-        db: AsyncSession,
         refresh_token: str,
     ) -> None:
         """
         Invalidate an active session.
         """
 
-        session_repository = (
-            SessionRepository(db)
-        )
-
-        session = (
-            await session_repository
-            .get_by_refresh_token(
+        await (
+            redis_session_service
+            .revoke_session(
                 refresh_token
             )
         )
-
-        if session:
-
-            await (
-                session_repository.delete(
-                    session.id
-                )
-            )
 
 
 auth_service = AuthService()

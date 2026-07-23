@@ -111,12 +111,8 @@ async def github_callback(
             )
         )
 
-        tokens = (
-            await auth_service
-            .create_session(
-                db,
-                user,
-            )
+        tokens = await auth_service.create_session(
+            user
         )
 
         return AuthResponse(
@@ -167,14 +163,12 @@ async def refresh_token(
 )
 async def logout(
     payload: LogoutRequest,
-    db: AsyncSession = Depends(get_db),
 ):
     """
     Logout user.
     """
 
     await auth_service.logout_user(
-        db,
         payload.refresh_token,
     )
 
