@@ -140,6 +140,7 @@ async def github_callback(
 )
 async def refresh_token(
     payload: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Refresh access token.
@@ -148,7 +149,8 @@ async def refresh_token(
     access_token = (
         await auth_service
         .refresh_access_token(
-            payload.refresh_token
+            db,
+            payload.refresh_token,
         )
     )
 

@@ -35,6 +35,7 @@ from app.services.jwt_service import (
     JWTService,
 )
 
+from fastapi import HTTPException, status
 
 class AuthService:
     """
@@ -150,16 +151,24 @@ class AuthService:
         Generate a new access token
         from a valid refresh token.
         """
-        payload = JWTService.verify_token(
-            refresh_token,
-            token_type="refresh",
-        )
+        try:
+            payload = JWTService.verify_token(
+                refresh_token,
+                token_type="refresh",
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token."
+            )
+
         exists = await redis_session_service.validate_session(
             refresh_token
         )
         if not exists:
-            raise ValueError(
-                "Session expired."
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired.",
             )
         user_id = int(
             payload["sub"]
@@ -176,8 +185,9 @@ class AuthService:
         )
 
         if not user:
-            raise ValueError(
-                "User not found."
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found.",
             )
 
         return (
