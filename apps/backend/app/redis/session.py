@@ -63,7 +63,7 @@ class RedisSessionService:
         await cache_manager.set(
             key,
             str(user_id),
-            ex=ttl,
+            ttl=ttl,
         )
 
     async def get_user_id(
@@ -87,6 +87,27 @@ class RedisSessionService:
             return None
 
         return int(value)
+
+
+    async def validate_session(
+        self,
+        refresh_token: str,
+    ) -> bool:
+        """
+        Check whether a session exists.
+        """
+
+        key = (
+            f"{self.SESSION_PREFIX}:"
+            f"{refresh_token}"
+        )
+
+        value = await cache_manager.get(
+            key
+        )
+
+        return value is not None
+
 
     async def revoke_session(
         self,

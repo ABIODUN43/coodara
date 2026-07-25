@@ -113,13 +113,16 @@ class GitHubOAuthService:
 
             payload = response.json()
 
+            print("GITHUB RESPONSE:")
+            print(payload)
+
             access_token = payload.get(
                 "access_token"
             )
 
             if not access_token:
                 raise ValueError(
-                    "Failed to obtain GitHub access token."
+                    f"GitHub response: {payload}"
                 )
 
             return access_token
