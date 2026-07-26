@@ -1,8 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FaGithub } from "react-icons/fa";
+import { useAuth } from "../../hooks/useAuth";
 
 export function LoginCard() {
   const panelRef = useRef<HTMLDivElement>(null);
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -18,6 +21,15 @@ export function LoginCard() {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
+  async function handleGithubLogin() {
+    setIsLoading(true);
+    try {
+      await login();
+    } catch {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <div
       ref={panelRef}
@@ -28,10 +40,14 @@ export function LoginCard() {
         Continue with GitHub to access your architecture workspace.
       </p>
 
-      <button className="group mb-2 flex w-full items-center cursor-pointer justify-center rounded-lg border border-white/10 bg-[#b7c4ff] px-4 py-3 transition-all duration-300 hover:bg-[#b7c4ff]/90 active:scale-[0.98]">
+      <button
+        onClick={handleGithubLogin}
+        disabled={isLoading}
+        className="group mb-2 flex w-full items-center cursor-pointer justify-center rounded-lg border border-white/10 bg-[#b7c4ff] px-4 py-3 transition-all duration-300 hover:bg-[#b7c4ff]/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+      >
         <FaGithub className="mr-2 h-5 w-5 text-[#002682]" />
         <span className="text-xs font-medium tracking-wide text-[#002682]">
-          Continue with GitHub
+          {isLoading ? "Redirecting..." : "Continue with GitHub"}
         </span>
       </button>
 
