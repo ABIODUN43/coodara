@@ -4,7 +4,7 @@ export const getCurrentUser = async (
   accessToken: string
 ) => {
   const response = await api.get(
-    "/api/v1/auth/me",
+    "/auth/me",
     {
       headers: {
         Authorization:
