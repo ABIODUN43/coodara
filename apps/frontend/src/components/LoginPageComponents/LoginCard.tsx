@@ -42,7 +42,7 @@ export function LoginCard() {
   return (
     <div
       ref={panelRef}
-      className="flex w-full flex-col items-center rounded-xl border border-white/[0.08] bg-[rgba(11,11,11,0.6)] p-6 text-center backdrop-blur-xl transition-transform duration-100 sm:p-10"
+      className="flex w-full flex-col items-center rounded-xl border border-white/8 bg-[rgba(11,11,11,0.6)] p-6 text-center backdrop-blur-xl transition-transform duration-100 sm:p-10"
     >
       <h2 className="mb-1 text-2xl font-semibold text-[#e0e2e8]">
         Welcome Back

@@ -7,7 +7,7 @@ export function LoginBackground() {
       </div>
 
       <div className="pointer-events-none fixed bottom-0 left-0 right-0 h-px w-full overflow-hidden opacity-20">
-        <div className="absolute left-0 h-px w-full bg-gradient-to-r from-transparent via-[#b7c4ff] to-transparent blur-[1px]" />
+        <div className="absolute left-0 h-px w-full bg-linear-to-r from-transparent via-[#b7c4ff] to-transparent blur-[1px]" />
       </div>
     </>
   );
