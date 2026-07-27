@@ -74,6 +74,8 @@ from app.api.dependencies import (
 
 from app.models.user import User
 
+from app.core.config import settings
+
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"],
@@ -93,10 +95,9 @@ async def github_login():
         .get_authorization_url()
     )
 
-    return {
-        "authorization_url":
-        authorization_url
-    }
+    return RedirectResponse(
+        url=authorization_url
+    )
 
 
 @router.get(
@@ -140,7 +141,7 @@ async def github_callback(
     )
 
     frontend_url = (
-        "http://localhost:5173/auth/callback"
+        f"{settings.FRONTEND_URL}/auth/callback"
     )
 
     return RedirectResponse(

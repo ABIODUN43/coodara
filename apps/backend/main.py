@@ -24,7 +24,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-app.include_router(api_router)
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get(
@@ -50,3 +50,5 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+print(settings.DATABASE_URL)
