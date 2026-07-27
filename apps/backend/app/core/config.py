@@ -39,5 +39,7 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str
     GITHUB_CALLBACK_URL: str
 
+    FRONTEND_URL: str
+
 
 settings = Settings()
