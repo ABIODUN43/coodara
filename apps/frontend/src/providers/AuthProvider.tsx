@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   getCurrentUser,
-  loginWithGithub,
   logout as logoutRequest,
   type GithubUser,
 } from "../api/auth";
@@ -32,8 +31,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   async function login() {
-    const authorizationUrl = await loginWithGithub();
-    window.location.href = authorizationUrl;
+    window.location.href =
+      `${import.meta.env.VITE_API_URL}/auth/github`;
   }
 
   async function setUserFromTokens(accessToken: string, refreshToken: string) {
