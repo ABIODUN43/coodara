@@ -9,10 +9,9 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const authenticate = async () => {
-      const params =
-        new URLSearchParams(
-          window.location.search
-        );
+      const params = new URLSearchParams(
+        window.location.search
+      );
 
       const accessToken =
         params.get("access_token");
@@ -39,25 +38,15 @@ export default function AuthCallbackPage() {
       );
 
       try {
-        const response =
-          await getCurrentUser(
-            accessToken
-          );
+        const user = await getCurrentUser();
 
         useAuthStore
           .getState()
-          .setUser(
-            response.user
-          );
+          .setUser(user);
 
-        navigate(
-          "/dashboard"
-        );
-
+        navigate("/dashboard");
       } catch (error) {
-
         console.error(error);
-
         navigate("/login");
       }
     };

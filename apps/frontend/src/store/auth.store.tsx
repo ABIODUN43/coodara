@@ -1,33 +1,33 @@
 import { create } from "zustand";
 
-interface User {
-  id: string;
-  username: string;
-  email: string;
-  avatar_url: string;
-}
+import type { GithubUser } from "@/api/auth";
 
 interface AuthStore {
-  user: User | null;
+  user: GithubUser | null;
   authenticated: boolean;
 
-  setUser: (user: User | null) => void;
+  setUser: (
+    user: GithubUser | null
+  ) => void;
+
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
-  user: null,
-  authenticated: false,
+export const useAuthStore =
+  create<AuthStore>((set) => ({
+    user: null,
 
-  setUser: (user) =>
-    set({
-      user,
-      authenticated: !!user,
-    }),
+    authenticated: false,
 
-  logout: () =>
-    set({
-      user: null,
-      authenticated: false,
-    }),
-}));
+    setUser: (user) =>
+      set({
+        user,
+        authenticated: !!user,
+      }),
+
+    logout: () =>
+      set({
+        user: null,
+        authenticated: false,
+      }),
+  }));

@@ -80,10 +80,6 @@ export interface GithubUser {
   avatar_url: string;
 }
 
-export async function loginWithGithub(): Promise<string> {
-  const { data } = await api.get<{ authorization_url: string }>("/auth/github");
-  return data.authorization_url;
-}
 
 export async function getCurrentUser(): Promise<GithubUser> {
   const { data } = await api.get<{ user: GithubUser }>("/auth/me");

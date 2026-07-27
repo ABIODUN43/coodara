@@ -1,7 +1,7 @@
 import { createBrowserRouter } from "react-router-dom";
 import { AppLayout } from "@/components/common/AppLayout";
-import { LandingPage } from "@/features/landing/pages/LandingPage";
-import { LoginPage } from "@/features/landing/pages/LoginPage";
+import { LandingPage } from "@/pages/LandingPage";
+import { LoginPage } from "@/pages/LoginPage";
 import AuthCallbackPage from "@/features/auth/pages/AuthCallbackPage";
 
 
