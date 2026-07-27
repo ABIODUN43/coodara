@@ -4,6 +4,7 @@ import { LandingPage } from "@/features/landing/pages/LandingPage";
 import { LoginPage } from "@/features/landing/pages/LoginPage";
 import AuthCallbackPage from "@/features/auth/pages/AuthCallbackPage";
 
+
 export const router = createBrowserRouter([
   {
     element: <AppLayout />,

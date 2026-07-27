@@ -1,5 +1,5 @@
 import { FadeIn } from "@/components/common/FadeIn";
-import { Navbar } from "../../../components/common/Navbar";
+import { Navbar } from "../components/common/Navbar";
 import { Hero } from "../components/LandingPageComponents/Hero";
 import { MarqueeSection } from "../components/LandingPageComponents/MarqueeSection";
 import { ToolchainSection } from "../components/LandingPageComponents/ToolchainSection";
@@ -8,7 +8,7 @@ import { FeaturesSection } from "../components/LandingPageComponents/FeaturesSec
 import { ArchitectChat } from "../components/LandingPageComponents/ArchitectChat";
 import { EnterpriseSection } from "../components/LandingPageComponents/EnterpriseSection";
 import { FinalCTA } from "../components/LandingPageComponents/FinalCTA";
-import { Footer } from "../../../components/common/Footer";
+import { Footer } from "../components/common/Footer";
 import { GithubAnalysis } from "../components/LandingPageComponents/GithubAnalysis";
 
 export function LandingPage() {
