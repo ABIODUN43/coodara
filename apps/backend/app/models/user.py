@@ -80,3 +80,9 @@ class User(Base):
         "Organization",
         back_populates="owner",
     )
+
+    organization_members = relationship(
+    "OrganizationMember",
+    back_populates="user",
+    cascade="all, delete-orphan",
+    )

@@ -3,6 +3,7 @@ from app.models.session import Session
 from app.models.organization import (
     Organization,
 )
+from app.models.organization_member import OrganizationMember
 from app.models.repository import Repository
 
 __all__ = [
@@ -10,5 +11,8 @@ __all__ = [
     "Session",
     "Organization",
     "Repository",
+    "OrganizationMember",
 ]
+
+
 
