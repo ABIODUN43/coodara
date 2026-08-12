@@ -4,6 +4,7 @@ import { Logo } from "@/components/common/Logo";
 import { Avatar } from "@heroui/react";
 import {
   LayoutGrid,
+  Building2,
   GitBranch,
   Activity,
   Network,
@@ -15,6 +16,7 @@ import {
   Check,
 } from "lucide-react";
 import { DISPLAY_NAME } from "@/components/dashboard/user";
+import { initialOrganizations } from "@/data/MockDashboard";
 
 interface NavItem {
   label: string;
@@ -25,7 +27,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Overview", href: "/dashboard", icon: LayoutGrid },
-  { label: "Repositories", href: "/repositories", icon: GitBranch, count: 12 },
+  { label: "Organizations", href: "/dashboard/organizations", icon: Building2, count: initialOrganizations.length },
+  { label: "Repositories", href: "/dashboard/repositories", icon: GitBranch, count: 12 },
   { label: "Analyses", href: "/analyses", icon: Activity, count: 42 },
   { label: "Architecture", href: "/architecture", icon: Network },
   { label: "AI Assistant", href: "/ai-assistant", icon: Bot },
@@ -111,7 +114,10 @@ export function Sidebar({ isMobileOpen, onClose }: SidebarProps) {
 
         <nav className="flex flex-col gap-px px-2.5">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.href;
+            const isActive =
+              item.href === "/dashboard"
+                ? location.pathname === "/dashboard"
+                : location.pathname.startsWith(item.href);
             const Icon = item.icon;
             return (
               <Link

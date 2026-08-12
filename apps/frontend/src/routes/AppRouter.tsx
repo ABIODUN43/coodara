@@ -5,6 +5,9 @@ import { LoginPage } from "@/pages/LoginPage";
 import AuthCallbackPage from "@/features/auth/pages/AuthCallbackPage";
 import { DashboardLayout } from "@/pages/DashboardLayout";
 import { DashboardHome } from "@/pages/DashboardHome";
+import { OrganizationsPage } from "@/pages/OrganizationsPage";
+import { OrganizationDetailPage } from "@/pages/OrganizationDetailPage";
+import { RepositoriesPage } from "@/pages/RepositoriesPage";
 
 export const router = createBrowserRouter([
   {
@@ -15,7 +18,12 @@ export const router = createBrowserRouter([
       {
         path: "/dashboard",
         element: <DashboardLayout />,
-        children: [{ index: true, element: <DashboardHome /> }],
+        children: [
+          { index: true, element: <DashboardHome /> },
+          { path: "organizations", element: <OrganizationsPage /> },
+          { path: "organizations/:orgId", element: <OrganizationDetailPage /> },
+          { path: "repositories", element: <RepositoriesPage /> },
+        ],
       },
       { path: "*", element: <div>404 Not Found</div> },
       { path: "/auth/callback", element: <AuthCallbackPage /> },

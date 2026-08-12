@@ -1,12 +1,12 @@
 import { Navigate } from "react-router-dom";
-import { useAuthStore } from "@/store/auth.store";
+import { useAuth } from "@/hooks/useAuth"; // adjust path to match your actual hook
 
-export function ProtectedRoute({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { authenticated } = useAuthStore();
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, loading } = useAuth();
 
-  return authenticated ? children : <Navigate to="/" replace />;
+  if (loading) {
+    return null; // or a spinner — see note below
+  }
+
+  return isAuthenticated ? children : <Navigate to="/" replace />;
 }

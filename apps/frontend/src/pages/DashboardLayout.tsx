@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { Sidebar } from "../components/dashboard/sidebar";
+import { Sidebar } from "../components/dashboard/Sidebar";
 import { TopNavbar } from "../components/dashboard/TopNavbar";
 import { ProjectProvider } from "@/context/ProjectContext";
 
