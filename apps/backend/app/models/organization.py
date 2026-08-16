@@ -1,40 +1,33 @@
-# app/models/organization.py
-
 """
-Organization model.
+Organization database model.
 
-Organizations are the top-level workspace
-within Coodara.
-
-Every repository, analysis, architecture,
-and AI conversation belongs to an organization.
+An organization is a top-level Coodara workspace.
 """
+
+from __future__ import annotations
 
 from datetime import datetime
-
-from sqlalchemy import DateTime
-from sqlalchemy import ForeignKey
-from sqlalchemy import Integer
-from sqlalchemy import String
-from sqlalchemy import Text
-from sqlalchemy import func
-
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING
 
 from app.db.base import Base
 from app.models.organization_member import OrganizationMember
 
+if TYPE_CHECKING:
+    from app.models.repository import Repository
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 
 class Organization(Base):
     """
-    Organization workspace.
-
-    Examples:
-        - Coodara
-        - Acme Inc
-        - Startup XYZ
+    Coodara organization/workspace.
     """
 
     __tablename__ = "organizations"
@@ -90,26 +83,21 @@ class Organization(Base):
 
     owner = relationship(
         "User",
+        back_populates="organizations",
         foreign_keys=[owner_id],
     )
 
-    members: Mapped[list["OrganizationMember"]] = relationship(
+    members: Mapped[list[OrganizationMember]] = relationship(
         "OrganizationMember",
         back_populates="organization",
         cascade="all, delete-orphan",
     )
 
-    repositories = relationship(
+    repositories: Mapped[list[Repository]] = relationship(
         "Repository",
         back_populates="organization",
         cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
-        return (
-            f"Organization("
-            f"id={self.id}, "
-            f"name='{self.name}', "
-            f"slug='{self.slug}'"
-            f")"
-        )
+        return f"Organization(id={self.id}, name={self.name!r}, slug={self.slug!r})"

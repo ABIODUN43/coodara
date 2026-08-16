@@ -1,140 +1,133 @@
 """
-Authentication business logic.
+Authentication application service.
 
 Responsible for:
 
 - GitHub authentication
-- User creation
-- Session management
-- Token refresh
-- Logout handling
+- User creation/update
+- Access-token generation
+- Refresh-session creation
+- Refresh-token rotation
+- Session validation
+- Logout
 
-This module orchestrates all authentication
-operations for the Coodara platform.
-
-Owner:
-    Founder / AI Lead
-
-Last Updated:
-    July 2026
+The service contains authentication business logic
+but does not depend on FastAPI request/response objects.
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from __future__ import annotations
+
+import secrets
+from typing import Any
 
 from app.models.user import User
-
-from app.repositories.user_repository import (
-    UserRepository,
-)
-
-from app.redis.session import (
-    redis_session_service,
-)
-
-from app.services.jwt_service import (
-    JWTService,
-)
-
+from app.redis.session import redis_session_service
+from app.repositories.user_repository import UserRepository
+from app.services.jwt_service import JWTService
 from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 
 class AuthService:
     """
-    Authentication service.
-
-    Handles all authentication workflows
-    and session lifecycle management.
+    Application service for authentication.
     """
+
+    @staticmethod
+    def _generate_refresh_token() -> str:
+        """
+        Generate a cryptographically secure opaque refresh token.
+        """
+
+        return secrets.token_urlsafe(64)
 
     async def authenticate_github_user(
         self,
         db: AsyncSession,
-        github_user: dict,
+        github_user: dict[str, Any],
     ) -> User:
         """
-        Authenticate a GitHub user.
-
-        Creates a new user if one does
-        not already exist.
-
-        Updates profile information
-        when the user already exists.
+        Find or create a user from GitHub profile data.
         """
 
-        user_repository = UserRepository(db)
+        repository = UserRepository(db)
 
-        user = (
-            await user_repository
-            .get_by_github_id(
-                github_user["github_id"]
+        github_id = github_user.get("github_id")
+
+        if not isinstance(github_id, int):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid GitHub user identity.",
             )
+
+        username = github_user.get("username")
+
+        if not isinstance(username, str) or not username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid GitHub username.",
+            )
+
+        email = github_user.get("email")
+        avatar_url = github_user.get("avatar_url")
+
+        if email is not None and not isinstance(email, str):
+            email = None
+
+        if avatar_url is not None and not isinstance(
+            avatar_url,
+            str,
+        ):
+            avatar_url = None
+
+        user = await repository.get_by_github_id(
+            github_id,
         )
 
-        if user:
-
-            return await user_repository.update(
+        if user is not None:
+            return await repository.update(
                 user,
-                username=github_user[
-                    "username"
-                ],
-                email=github_user[
-                    "email"
-                ],
-                avatar_url=github_user[
-                    "avatar_url"
-                ],
+                username=username,
+                email=email,
+                avatar_url=avatar_url,
             )
 
-        return await user_repository.create(
-            github_id=github_user[
-                "github_id"
-            ],
-            username=github_user[
-                "username"
-            ],
-            email=github_user[
-                "email"
-            ],
-            avatar_url=github_user[
-                "avatar_url"
-            ],
+        return await repository.create(
+            github_id=github_id,
+            username=username,
+            email=email,
+            avatar_url=avatar_url,
         )
 
     async def create_session(
         self,
         user: User,
-    ) -> dict:
+    ) -> dict[str, str]:
         """
-        Create a new authenticated
-        session for a user.
+        Create an authenticated session.
 
-        Generates:
+        Returns:
 
-        - Access Token
-        - Refresh Token
+            access_token:
+                Short-lived JWT.
 
-        Stores refresh token
-        in Redis.
+            refresh_token:
+                Opaque random secret.
+
+        The refresh token is stored only indirectly:
+        Redis stores its SHA-256 hash as the key.
         """
 
-        access_token = (
-            JWTService.create_access_token(
-                user_id=user.id,
-                username=user.username,
-            )
+        access_token = JWTService.create_access_token(
+            user_id=user.id,
+            username=user.username,
         )
 
-        refresh_token = (
-            JWTService.create_refresh_token(
-                user_id=user.id,
-            )
-        )
+        refresh_token = self._generate_refresh_token()
 
-        await (
-            redis_session_service
-            .create_session(
-                user_id=user.id,
-                refresh_token=refresh_token,
-            )
+        await redis_session_service.create_session(
+            user_id=user.id,
+            refresh_token=refresh_token,
         )
 
         return {
@@ -142,74 +135,96 @@ class AuthService:
             "refresh_token": refresh_token,
         }
 
-    async def refresh_access_token(
+    async def refresh_session(
         self,
         db: AsyncSession,
         refresh_token: str,
-    ) -> str:
+    ) -> dict[str, str]:
         """
-        Generate a new access token
-        from a valid refresh token.
+        Validate and rotate an authenticated session.
+
+        Rotation:
+
+            old refresh token
+                    ↓
+                 validate
+                    ↓
+                 revoke
+                    ↓
+            generate new refresh token
+                    ↓
+            create new Redis session
+                    ↓
+            create new access token
         """
-        try:
-            payload = JWTService.verify_token(
+
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh session is required.",
+            )
+
+        user_id = await redis_session_service.get_user_id(
+            refresh_token,
+        )
+
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh session.",
+            )
+
+        repository = UserRepository(db)
+
+        user = await repository.get_by_id(user_id)
+
+        if user is None:
+            await redis_session_service.revoke_session(
                 refresh_token,
-                token_type="refresh",
             )
-        except Exception:
+
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token."
+                detail="Invalid refresh session.",
             )
 
-        exists = await redis_session_service.validate_session(
-            refresh_token
-        )
-        if not exists:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session expired.",
-            )
-        user_id = int(
-            payload["sub"]
+        # Revoke the old token before issuing another one.
+        await redis_session_service.revoke_session(
+            refresh_token,
         )
 
-        user_repository = (
-            UserRepository(db)
+        access_token = JWTService.create_access_token(
+            user_id=user.id,
+            username=user.username,
         )
 
-        user = await (
-            user_repository.get_by_id(
-                user_id
-            )
+        new_refresh_token = self._generate_refresh_token()
+
+        await redis_session_service.create_session(
+            user_id=user.id,
+            refresh_token=new_refresh_token,
         )
 
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found.",
-            )
-
-        return (
-            JWTService.create_access_token(
-                user_id=user.id,
-                username=user.username,
-            )
-        )
+        return {
+            "access_token": access_token,
+            "refresh_token": new_refresh_token,
+        }
 
     async def logout_user(
         self,
         refresh_token: str,
     ) -> None:
         """
-        Invalidate an active session.
+        Revoke an authenticated refresh session.
+
+        Logout is intentionally idempotent.
         """
 
-        await (
-            redis_session_service
-            .revoke_session(
-                refresh_token
-            )
+        if not refresh_token:
+            return
+
+        await redis_session_service.revoke_session(
+            refresh_token,
         )
 
 

@@ -11,17 +11,12 @@ from app.services.redis_service import (
 
 
 class CacheManager:
-
     async def get(
         self,
         key: str,
     ):
 
-        return await (
-            redis_service.client.get(
-                key
-            )
-        )
+        return await redis_service.client.get(key)
 
     async def set(
         self,
@@ -41,11 +36,7 @@ class CacheManager:
         key: str,
     ):
 
-        await (
-            redis_service.client.delete(
-                key
-            )
-        )
+        await redis_service.client.delete(key)
 
 
 cache_manager = CacheManager()

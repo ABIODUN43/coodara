@@ -1,62 +1,53 @@
 """
-Authentication schemas.
+Authentication API schemas.
 
 Responsible for:
 
-- Token responses
-- Refresh token requests
-- Authenticated user responses
-- Standard authentication payloads
+- Authenticated-user responses
+- Refresh responses
+- Logout responses
 
-These schemas define the API contract between
-the Coodara backend and frontend applications.
-
-Owner:
-    Founder / AI Lead
-
-Last Updated:
-    July 2026
+Refresh tokens are intentionally never exposed
+through API response schemas.
 """
+
+from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from app.schemas.user import (
-    UserResponse,
-)
 
-
-class TokenResponse(BaseModel):
+class UserResponse(BaseModel):
     """
-    Response returned after successful
-    authentication.
+    Public representation of an authenticated user.
     """
 
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: int
+    github_id: int
+    username: str
+    email: str | None
+    avatar_url: str | None
 
 
-class RefreshRequest(BaseModel):
+class AuthenticatedUserResponse(BaseModel):
     """
-    Request payload for refreshing
-    an access token.
+    Response returned by GET /auth/me.
     """
 
-    refresh_token: str
+    user: UserResponse
 
 
 class RefreshResponse(BaseModel):
     """
-    Response returned when a new
-    access token is generated.
+    Response returned after refresh-token rotation.
+
+    The refresh token remains inside an HttpOnly cookie.
     """
 
     access_token: str
-    token_type: str = "bearer"
-
-
-class LogoutRequest(BaseModel):
-    refresh_token: str
 
 
 class LogoutResponse(BaseModel):
@@ -65,40 +56,3 @@ class LogoutResponse(BaseModel):
     """
 
     success: bool = True
-    message: str = (
-        "Successfully logged out."
-    )
-
-
-class ErrorResponse(BaseModel):
-    """
-    Standardized error response for
-    authentication APIs.
-    """
-
-    success: bool = False
-    message: str
-    error_code: str | None = None
-
-
-class AuthenticatedUserResponse(
-    BaseModel
-):
-    """
-    Response for GET /auth/me.
-    """
-
-    user: UserResponse
-
-    model_config = ConfigDict(
-        from_attributes=True
-    )
-    
-
-class AuthResponse(
-    BaseModel
-):
-    user: UserResponse
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
