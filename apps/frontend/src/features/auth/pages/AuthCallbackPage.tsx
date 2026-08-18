@@ -1,58 +1,51 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { getCurrentUser } from "@/api/auth";
-import { useAuthStore } from "@/store/auth.store";
+import { useAuthContext } from "@/context/AuthContext";
 
 export default function AuthCallbackPage() {
   const navigate = useNavigate();
 
+  const { refreshUser } = useAuthContext();
+
   useEffect(() => {
-    const authenticate = async () => {
-      const params = new URLSearchParams(
-        window.location.search
-      );
+    let mounted = true;
 
-      const accessToken =
-        params.get("access_token");
-
-      const refreshToken =
-        params.get("refresh_token");
-
-      if (
-        !accessToken ||
-        !refreshToken
-      ) {
-        navigate("/login");
-        return;
-      }
-
-      localStorage.setItem(
-        "access_token",
-        accessToken
-      );
-
-      localStorage.setItem(
-        "refresh_token",
-        refreshToken
-      );
-
+    async function authenticate() {
       try {
-        const user = await getCurrentUser();
+        /*
+         * The backend has already completed GitHub OAuth
+         * and set HttpOnly authentication cookies.
+         *
+         * We only need to restore the authenticated user.
+         */
+        await refreshUser();
 
-        useAuthStore
-          .getState()
-          .setUser(user);
-
-        navigate("/dashboard");
+        if (mounted) {
+          navigate("/dashboard", {
+            replace: true,
+          });
+        }
       } catch (error) {
-        console.error(error);
-        navigate("/login");
+        console.error(
+          "GitHub authentication callback failed:",
+          error,
+        );
+
+        if (mounted) {
+          navigate("/login", {
+            replace: true,
+          });
+        }
       }
-    };
+    }
 
     authenticate();
-  }, [navigate]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [navigate, refreshUser]);
 
   return (
     <div className="flex h-screen items-center justify-center">

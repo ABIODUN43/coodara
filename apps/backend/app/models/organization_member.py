@@ -1,38 +1,30 @@
-# app/models/organization_member.py
-
 """
-Organization membership model.
+Organization membership database model.
 
-Connects users to organizations and
-stores organization-specific roles.
+Connects users to organizations and stores
+organization-specific roles.
 """
+
+from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime
-from sqlalchemy import Enum
-from sqlalchemy import ForeignKey
-from sqlalchemy import Integer
-from sqlalchemy import UniqueConstraint
-from sqlalchemy import func
-
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm import relationship
-
 from app.db.base import Base
-from app.models.enums.organization_role import (
-    OrganizationRole,
+from app.models.enums.organization_role import OrganizationRole
+from sqlalchemy import (
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    UniqueConstraint,
+    func,
 )
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class OrganizationMember(Base):
     """
-    Organization membership.
-
-    One user may belong to many organizations.
-
-    One organization may contain many users.
+    Membership connecting a user to an organization.
     """
 
     __tablename__ = "organization_members"
@@ -98,6 +90,6 @@ class OrganizationMember(Base):
             f"OrganizationMember("
             f"organization_id={self.organization_id}, "
             f"user_id={self.user_id}, "
-            f"role='{self.role.value}'"
+            f"role={self.role.value!r}"
             f")"
         )

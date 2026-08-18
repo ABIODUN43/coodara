@@ -16,7 +16,6 @@ import secrets
 
 
 class TokenService:
-
     @staticmethod
     def generate_refresh_token() -> str:
         """
@@ -24,6 +23,4 @@ class TokenService:
         secure refresh token.
         """
 
-        return secrets.token_urlsafe(
-            64
-        )
+        return secrets.token_urlsafe(64)

@@ -1,54 +1,49 @@
 """
 Organization API endpoints.
 
-Responsible for:
+Responsible for exposing organization HTTP endpoints.
 
-- Creating organizations
-- Listing user organizations
-- Retrieving organization details
+Business logic belongs to OrganizationService.
+Database access belongs to OrganizationRepository and
+OrganizationMemberRepository.
 
-Owner:
-    Founder / AI Lead
-
-Last Updated:
-    July 2026
+Transaction ownership belongs to this application/API layer.
 """
 
-from fastapi import (
-    APIRouter,
-    Depends,
-)
+from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-)
+from typing import Annotated
 
 from app.api.dependencies import (
+    OrganizationMemberDependency,
     get_current_active_user,
 )
-
-from app.db.session import (
-    get_db,
-)
-
+from app.db.session import get_db
+from app.models.organization import Organization
 from app.models.user import User
-
 from app.repositories.organization_member_repository import (
     OrganizationMemberRepository,
 )
-
 from app.repositories.organization_repository import (
     OrganizationRepository,
 )
-
 from app.schemas.organization import (
     CreateOrganizationRequest,
     OrganizationResponse,
 )
-
 from app.services.organization_service import (
+    OrganizationAlreadyExistsError,
+    OrganizationNotFoundError,
     OrganizationService,
 )
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Path,
+    status,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(
     prefix="/organizations",
@@ -56,90 +51,101 @@ router = APIRouter(
 )
 
 
-def get_organization_service(
+def _create_organization_service(
     db: AsyncSession,
 ) -> OrganizationService:
     """
-    Build organization service.
+    Construct OrganizationService with its repositories.
     """
 
-    organization_repository = (
-        OrganizationRepository(db)
+    organization_repository = OrganizationRepository(
+        db,
     )
 
-    organization_member_repository = (
-        OrganizationMemberRepository(db)
+    organization_member_repository = OrganizationMemberRepository(
+        db,
     )
 
     return OrganizationService(
-        organization_repository,
-        organization_member_repository,
+        organization_repository=organization_repository,
+        organization_member_repository=organization_member_repository,
     )
 
 
 @router.post(
     "",
     response_model=OrganizationResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
 )
 async def create_organization(
     payload: CreateOrganizationRequest,
-    current_user: User = Depends(
-        get_current_active_user
-    ),
-    db: AsyncSession = Depends(
-        get_db
-    ),
-):
+    current_user: Annotated[
+        User,
+        Depends(get_current_active_user),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
+) -> Organization:
     """
-    Create organization.
+    Create an organization.
 
-    Automatically creates an OWNER
-    membership for the creator.
+    The authenticated user automatically becomes
+    the organization owner.
     """
 
-    service = get_organization_service(
-        db
+    service = _create_organization_service(
+        db,
     )
 
-    organization = (
-        await service.create_organization(
+    try:
+        organization = await service.create_organization(
             user_id=current_user.id,
             payload=payload,
         )
-    )
 
-    return organization
+        await db.commit()
+
+        return organization
+
+    except OrganizationAlreadyExistsError as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    except Exception:
+        await db.rollback()
+        raise
 
 
 @router.get(
     "",
-    response_model=list[
-        OrganizationResponse
-    ],
+    response_model=list[OrganizationResponse],
 )
-async def list_organizations(
-    current_user: User = Depends(
-        get_current_active_user
-    ),
-    db: AsyncSession = Depends(
-        get_db
-    ),
-):
+async def list_my_organizations(
+    current_user: Annotated[
+        User,
+        Depends(get_current_active_user),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
+) -> list[Organization]:
     """
-    List organizations
-    belonging to current user.
+    List organizations where the authenticated user is a member.
     """
 
-    service = get_organization_service(
-        db
+    service = _create_organization_service(
+        db,
     )
 
-    return (
-        await service
-        .get_user_organizations(
-            current_user.id
-        )
+    return await service.get_user_organizations(
+        current_user.id,
     )
 
 
@@ -148,25 +154,33 @@ async def list_organizations(
     response_model=OrganizationResponse,
 )
 async def get_organization(
-    organization_id: int,
-    current_user: User = Depends(
-        get_current_active_user
-    ),
-    db: AsyncSession = Depends(
-        get_db
-    ),
-):
+    organization_id: Annotated[
+        int,
+        Path(gt=0),
+    ],
+    member: OrganizationMemberDependency,
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
+) -> Organization:
     """
-    Retrieve organization details.
+    Retrieve an organization.
+
+    Access requires membership in the organization.
     """
 
-    service = get_organization_service(
-        db
+    service = _create_organization_service(
+        db,
     )
 
-    return (
-        await service
-        .get_organization(
-            organization_id
+    try:
+        return await service.get_organization(
+            organization_id,
         )
-    )
+
+    except OrganizationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found.",
+        ) from exc
