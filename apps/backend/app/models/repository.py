@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.analysis import AnalysisJob
     from app.models.organization import Organization
 from sqlalchemy import (
     BigInteger,
@@ -138,6 +139,12 @@ class Repository(Base):
     organization: Mapped[Organization] = relationship(
         "Organization",
         back_populates="repositories",
+    )
+
+    analysis_jobs: Mapped[list[AnalysisJob]] = relationship(
+    "AnalysisJob",
+    back_populates="repository",
+    cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

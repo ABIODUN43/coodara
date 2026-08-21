@@ -8,6 +8,9 @@ Last Updated:
     July 2026
 """
 
+from app.api.v1.analysis import (
+    router as analysis_router,
+)
 from app.api.v1.auth import (
     router as auth_router,
 )
@@ -32,4 +35,8 @@ api_router.include_router(
 
 api_router.include_router(
     repositories_router,
+)
+
+api_router.include_router(
+    analysis_router,
 )
