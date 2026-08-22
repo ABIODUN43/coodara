@@ -15,6 +15,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.analysis import AnalysisJob
+    from app.models.architecture import ArchitectureSnapshot
     from app.models.organization import Organization
 from sqlalchemy import (
     BigInteger,
@@ -145,6 +146,14 @@ class Repository(Base):
     "AnalysisJob",
     back_populates="repository",
     cascade="all, delete-orphan",
+    )
+
+    architecture_snapshots: Mapped[
+        list[ArchitectureSnapshot]
+    ] = relationship(
+        "ArchitectureSnapshot",
+        back_populates="repository",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

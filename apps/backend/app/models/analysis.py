@@ -12,6 +12,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from app.models.architecture import ArchitectureSnapshot
+    from app.models.repository import Repository
+
 from app.db.base import Base
 from sqlalchemy import (
     DateTime,
@@ -178,6 +182,14 @@ class AnalysisResult(Base):
     job: Mapped[AnalysisJob] = relationship(
         "AnalysisJob",
         back_populates="result",
+    )
+
+    architecture_snapshot: Mapped[
+        ArchitectureSnapshot | None
+    ] = relationship(
+        "ArchitectureSnapshot",
+        back_populates="analysis_result",
+        uselist=False,
     )
 
     metrics: Mapped[RepositoryMetrics | None] = relationship(
