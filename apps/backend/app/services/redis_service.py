@@ -15,9 +15,8 @@ Last Updated:
     July 2026
 """
 
-from redis.asyncio import Redis
-
 from app.core.config import settings
+from redis.asyncio import Redis
 
 
 class RedisService:

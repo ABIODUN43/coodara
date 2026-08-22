@@ -1,25 +1,26 @@
 """
-User model.
+User database model.
 """
+
+from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import (
-    DateTime,
-    Integer,
-    String,
-    func,
-)
-from sqlalchemy.orm import (
-    Mapped,
-    mapped_column,
-    relationship,
-)
-
 from app.db.base import Base
+from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class User(Base):
+    """
+    Application user.
+
+    A user may own organizations and may belong
+    to multiple organizations.
+
+    GitHub OAuth access tokens are stored encrypted
+    and are never exposed through API schemas.
+    """
 
     __tablename__ = "users"
 
@@ -32,6 +33,7 @@ class User(Base):
         Integer,
         unique=True,
         nullable=False,
+        index=True,
     )
 
     username: Mapped[str] = mapped_column(
@@ -40,34 +42,33 @@ class User(Base):
         nullable=False,
     )
 
-    email: Mapped[str | None] = (
-        mapped_column(
-            String(255),
-            unique=True,
-            nullable=True,
-        )
+    email: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
     )
 
-    avatar_url: Mapped[str | None] = (
-        mapped_column(
-            String(500),
-            nullable=True,
-        )
+    avatar_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
     )
 
-    created_at: Mapped[datetime] = (
-        mapped_column(
-            DateTime(timezone=True),
-            server_default=func.now(),
-        )
+    github_access_token_encrypted: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
     )
 
-    updated_at: Mapped[datetime] = (
-        mapped_column(
-            DateTime(timezone=True),
-            server_default=func.now(),
-            onupdate=func.now(),
-        )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     sessions = relationship(
@@ -79,4 +80,11 @@ class User(Base):
     organizations = relationship(
         "Organization",
         back_populates="owner",
+        foreign_keys="Organization.owner_id",
+    )
+
+    organization_members = relationship(
+        "OrganizationMember",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )

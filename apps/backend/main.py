@@ -1,21 +1,13 @@
 """
-Coodara API Application.
-
-Main FastAPI entrypoint.
-
-Owner:
-    Founder / AI Lead
-
-Last Updated:
-    July 2026
+Coodara API application entrypoint.
 """
 
+from __future__ import annotations
+
+from app.api.router import api_router
+from app.core.config import settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from app.core.config import settings
-from app.api.router import api_router
-
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -24,22 +16,6 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-app.include_router(api_router, prefix="/api/v1")
-
-
-@app.get(
-    "/health",
-    tags=["Health"],
-)
-async def health_check() -> dict:
-    """
-    Health check endpoint.
-    """
-
-    return {
-        "status": "healthy",
-        "service": settings.APP_NAME,
-    }
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,4 +27,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print(settings.DATABASE_URL)
+
+app.include_router(
+    api_router,
+    prefix="/api/v1",
+)
+
+
+@app.get(
+    "/health",
+    tags=["Health"],
+)
+async def health_check() -> dict[str, str]:
+    """
+    Return API health status.
+    """
+
+    return {
+        "status": "healthy",
+        "service": settings.APP_NAME,
+    }

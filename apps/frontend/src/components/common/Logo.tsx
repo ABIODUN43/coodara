@@ -9,7 +9,7 @@ export function Logo() {
         className="h-10 w-10"
       />
 
-      <span className="text-2xl font-bold text-black">
+      <span className="text-2xl font-bold text-[var(--cd-ink)]">
         Coodara
       </span>
     </div>

@@ -1,68 +1,106 @@
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+
 import {
   getCurrentUser,
+  loginWithGithub,
   logout as logoutRequest,
   type GithubUser,
 } from "../api/auth";
-import { AuthContext, type AuthContextValue } from "../context/AuthContext";
+
+import {
+  AuthContext,
+  type AuthContextValue,
+} from "../context/AuthContext";
 
 interface AuthProviderProps {
   children: ReactNode;
 }
 
-export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<GithubUser | null>(null);
+export function AuthProvider({
+  children,
+}: AuthProviderProps) {
+  const [user, setUser] =
+    useState<GithubUser | null>(null);
+
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+  /**
+   * Ask the backend who the current user is.
+   *
+   * The browser automatically sends the HttpOnly
+   * authentication cookies.
+   */
+  const refreshUser = useCallback(async () => {
+    const currentUser = await getCurrentUser();
 
-    getCurrentUser()
-      .then(setUser)
-      .catch(() => {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-      })
-      .finally(() => setLoading(false));
+    setUser(currentUser);
   }, []);
 
-  async function login() {
-    window.location.href =
-      `${import.meta.env.VITE_API_URL}/auth/github`;
-  }
+  /**
+   * Restore authentication when the application starts.
+   */
+  useEffect(() => {
+    let mounted = true;
 
-  async function setUserFromTokens(accessToken: string, refreshToken: string) {
-    localStorage.setItem("access_token", accessToken);
-    localStorage.setItem("refresh_token", refreshToken);
-    const fetchedUser = await getCurrentUser();
-    setUser(fetchedUser);
-  }
+    async function restoreAuthentication() {
+      try {
+        const currentUser =
+          await getCurrentUser();
 
-  async function logout() {
-    const refreshToken = localStorage.getItem("refresh_token");
-    try {
-      if (refreshToken) {
-        await logoutRequest(refreshToken);
+        if (mounted) {
+          setUser(currentUser);
+        }
+      } catch {
+        /*
+         * 401 simply means there is no valid
+         * authenticated session.
+         */
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
+    }
+
+    restoreAuthentication();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function login(): Promise<void> {
+    loginWithGithub();
+  }
+
+  async function logout(): Promise<void> {
+    try {
+      await logoutRequest();
     } finally {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
       setUser(null);
     }
   }
 
   const value: AuthContextValue = {
     user,
-    isAuthenticated: !!user,
+    isAuthenticated: user !== null,
     loading,
     login,
     logout,
-    setUserFromTokens,
+    refreshUser,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }

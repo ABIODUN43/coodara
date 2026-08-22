@@ -5,154 +5,267 @@ Responsible for:
 
 - GitHub OAuth login
 - GitHub OAuth callback
-- Access token refresh
+- Access-token refresh
 - Logout
-- Current user retrieval
+- Current-user retrieval
 
-Authentication Flow
-
-Frontend
-    ↓
-GET /auth/github
-    ↓
-GitHub OAuth
-    ↓
-GET /auth/callback
-    ↓
-Backend creates session
-    ↓
-Redirect Frontend
-    ↓
-Frontend stores tokens
-    ↓
-GET /auth/me
-
-Owner:
-    Founder / AI Lead
-
-Last Updated:
-    July 2026
+Authentication cookies are HttpOnly.
+Coodara refresh sessions are stored in Redis.
+GitHub OAuth credentials are encrypted server-side.
 """
 
+from __future__ import annotations
+
+from typing import Annotated
+
+from app.api.dependencies import get_current_active_user
+from app.core.config import settings
+from app.db.session import get_db
+from app.models.user import User
+from app.schemas.auth import (
+    AuthenticatedUserResponse,
+    LogoutResponse,
+    RefreshResponse,
+)
+from app.services.auth_service import auth_service
+from app.services.github_credential_service import (
+    github_credential_service,
+)
+from app.services.github_oauth_service import (
+    GitHubOAuthError,
+    github_oauth_service,
+)
+from app.services.github_oauth_state_service import (
+    github_oauth_state_service,
+)
 from fastapi import (
     APIRouter,
     Depends,
+    HTTPException,
     Query,
+    Request,
+    Response,
+    status,
 )
-
-from fastapi.responses import (
-    RedirectResponse,
-)
-
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-)
-
-from app.db.session import (
-    get_db,
-)
-
-from app.schemas.auth import (
-    AuthenticatedUserResponse,
-    LogoutRequest,
-    LogoutResponse,
-    RefreshRequest,
-    RefreshResponse,
-)
-
-from app.services.auth_service import (
-    auth_service,
-)
-
-from app.services.github_oauth_service import (
-    github_oauth_service,
-)
-
-from app.api.dependencies import (
-    get_current_active_user,
-)
-
-from app.models.user import User
-
-from app.core.config import settings
+from fastapi.responses import RedirectResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"],
 )
 
+ACCESS_TOKEN_COOKIE = "coodara_access_token"
+REFRESH_TOKEN_COOKIE = "coodara_refresh_token"
+OAUTH_STATE_COOKIE = "coodara_github_oauth_state"
 
-@router.get(
-    "/github",
-)
-async def github_login():
+
+def _is_secure_cookie() -> bool:
     """
-    Generate GitHub OAuth URL.
+    Authentication cookies require HTTPS in production.
     """
 
-    authorization_url = (
-        await github_oauth_service
-        .get_authorization_url()
+    return settings.ENVIRONMENT == "production"
+
+
+def _set_auth_cookies(
+    response: Response,
+    *,
+    access_token: str,
+    refresh_token: str,
+) -> None:
+    """
+    Set Coodara authentication cookies.
+    """
+
+    secure = _is_secure_cookie()
+
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        value=access_token,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
     )
 
-    return RedirectResponse(
-        url=authorization_url
+    response.set_cookie(
+        key=REFRESH_TOKEN_COOKIE,
+        value=refresh_token,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        max_age=(settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60),
+        path="/api/v1/auth",
     )
 
 
-@router.get(
-    "/callback",
-)
+def _set_oauth_state_cookie(
+    response: Response,
+    state: str,
+) -> None:
+    """
+    Store OAuth state in a short-lived browser cookie.
+
+    The state is also stored server-side in Redis.
+    """
+
+    response.set_cookie(
+        key=OAUTH_STATE_COOKIE,
+        value=state,
+        httponly=True,
+        secure=_is_secure_cookie(),
+        samesite="lax",
+        max_age=600,
+        path="/api/v1/auth",
+    )
+
+
+def _clear_auth_cookies(
+    response: Response,
+) -> None:
+    """
+    Remove authentication and OAuth-state cookies.
+    """
+
+    response.delete_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        path="/",
+    )
+
+    response.delete_cookie(
+        key=REFRESH_TOKEN_COOKIE,
+        path="/auth/v1/auth",
+    )
+
+    response.delete_cookie(
+        key=OAUTH_STATE_COOKIE,
+        path="/api/v1/auth",
+    )
+
+
+@router.get("/github")
+async def github_login() -> RedirectResponse:
+    """
+    Start GitHub OAuth authentication.
+    """
+
+    state = await github_oauth_state_service.create_state()
+
+    authorization_url = await github_oauth_service.get_authorization_url(
+        state=state,
+    )
+
+    response = RedirectResponse(
+        url=authorization_url,
+        status_code=status.HTTP_302_FOUND,
+    )
+
+    _set_oauth_state_cookie(
+        response,
+        state,
+    )
+
+    return response
+
+
+@router.get("/callback")
 async def github_callback(
-    code: str = Query(...),
-    db: AsyncSession = Depends(get_db),
-):
+    code: str = Query(
+        ...,
+        min_length=1,
+    ),
+    state: str = Query(
+        ...,
+        min_length=1,
+    ),
+    request: Request = None,
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ] = None,
+) -> RedirectResponse:
     """
-    GitHub OAuth callback.
+    Handle the GitHub OAuth callback.
+
+    The OAuth state must exist both:
+
+    - in the browser cookie
+    - in the server-side Redis state store
+
+    Tokens are never included in the redirect URL.
     """
 
-    github_access_token = (
-        await github_oauth_service
-        .exchange_code_for_token(
-            code
-        )
+    cookie_state = request.cookies.get(
+        OAUTH_STATE_COOKIE,
     )
+    
 
-    github_user = (
-        await github_oauth_service
-        .get_github_user(
-            github_access_token
+    if not cookie_state or cookie_state != state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth state.",
         )
-    )
 
-    user = (
-        await auth_service
-        .authenticate_github_user(
+    if not await github_oauth_state_service.consume_state(
+        state,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OAuth state is invalid or expired.",
+        )
+
+    try:
+        github_access_token = await github_oauth_service.exchange_code_for_token(
+            code,
+        )
+
+        github_user = await github_oauth_service.get_github_user(
+            github_access_token,
+        )
+
+        user = await auth_service.authenticate_github_user(
             db,
             github_user,
         )
-    )
 
-    tokens = (
-        await auth_service
-        .create_session(
-            user
+        github_credential_service.store_access_token(
+            user,
+            github_access_token,
         )
-    )
 
-    frontend_url = (
-        f"{settings.FRONTEND_URL}/auth/callback"
-    )
+        await db.commit()
 
-    return RedirectResponse(
-        url=(
-            f"{frontend_url}"
-            f"?access_token="
-            f"{tokens['access_token']}"
-            f"&refresh_token="
-            f"{tokens['refresh_token']}"
+        tokens = await auth_service.create_session(
+            user,
         )
+
+    except GitHubOAuthError as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="GitHub authentication failed.",
+        ) from exc
+
+    response = RedirectResponse(
+        url=f"{settings.FRONTEND_URL}/auth/callback",
+        status_code=status.HTTP_302_FOUND,
     )
+
+    _set_auth_cookies(
+        response,
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+    )
+
+    response.delete_cookie(
+        key=OAUTH_STATE_COOKIE,
+        path="/api/v1/auth",
+    )
+
+    return response
 
 
 @router.post(
@@ -160,23 +273,47 @@ async def github_callback(
     response_model=RefreshResponse,
 )
 async def refresh_token(
-    payload: RefreshRequest,
-    db: AsyncSession = Depends(get_db),
-):
+    request: Request,
+    response: Response,
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
+) -> RefreshResponse:
     """
-    Refresh access token.
+    Rotate the Coodara refresh session.
     """
 
-    access_token = (
-        await auth_service
-        .refresh_access_token(
-            db,
-            payload.refresh_token,
+    refresh_token_value = request.cookies.get(
+        REFRESH_TOKEN_COOKIE,
+    )
+
+    if not refresh_token_value:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh session is required.",
         )
+
+    try:
+        tokens = await auth_service.refresh_session(
+            db,
+            refresh_token_value,
+        )
+
+        await db.commit()
+
+    except HTTPException:
+        await db.rollback()
+        raise
+
+    _set_auth_cookies(
+        response,
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
     )
 
     return RefreshResponse(
-        access_token=access_token
+        access_token=tokens["access_token"],
     )
 
 
@@ -185,33 +322,43 @@ async def refresh_token(
     response_model=LogoutResponse,
 )
 async def logout(
-    payload: LogoutRequest,
-):
+    request: Request,
+    response: Response,
+) -> LogoutResponse:
     """
-    Logout user.
+    Revoke the current Coodara refresh session.
+
+    Logout is idempotent.
     """
 
-    await auth_service.logout_user(
-        payload.refresh_token
+    refresh_token_value = request.cookies.get(
+        REFRESH_TOKEN_COOKIE,
     )
+
+    if refresh_token_value:
+        await auth_service.logout_user(
+            refresh_token_value,
+        )
+
+    _clear_auth_cookies(response)
 
     return LogoutResponse()
 
 
 @router.get(
     "/me",
-    response_model=
-    AuthenticatedUserResponse,
+    response_model=AuthenticatedUserResponse,
 )
 async def get_current_user_profile(
-    current_user: User = Depends(
-        get_current_active_user
-    ),
-):
+    current_user: Annotated[
+        User,
+        Depends(get_current_active_user),
+    ],
+) -> AuthenticatedUserResponse:
     """
-    Retrieve authenticated user.
+    Retrieve the currently authenticated user.
     """
 
     return AuthenticatedUserResponse(
-        user=current_user
+        user=current_user,
     )

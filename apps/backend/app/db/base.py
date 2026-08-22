@@ -1,14 +1,11 @@
 """
-Database base class.
-
-All SQLAlchemy models inherit from Base.
+SQLAlchemy declarative base.
 """
 
 from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
-    pass
-
-
-
+    """
+    Base class for all SQLAlchemy models.
+    """

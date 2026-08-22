@@ -1,33 +1,77 @@
 """
-Repository model.
+Repository database model.
+
+Represents a GitHub repository connected to a
+Coodara organization.
 """
 
-from datetime import datetime
+from __future__ import annotations
 
+from datetime import datetime
+from enum import Enum
+from typing import TYPE_CHECKING
+
+from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.analysis import AnalysisJob
+    from app.models.architecture import ArchitectureSnapshot
+    from app.models.organization import Organization
 from sqlalchemy import (
+    BigInteger,
     DateTime,
     ForeignKey,
     Integer,
     String,
+    Text,
+    UniqueConstraint,
     func,
 )
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sqlalchemy.orm import (
-    Mapped,
-    mapped_column,
-    relationship,
-)
 
-from app.db.base import Base
+class RepositoryVisibility(str, Enum):
+    """
+    GitHub repository visibility.
+    """
+
+    PUBLIC = "public"
+    PRIVATE = "private"
 
 
 class Repository(Base):
+    """
+    GitHub repository connected to a Coodara organization.
+    """
 
     __tablename__ = "repositories"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "github_id",
+            name="uq_repository_organization_github",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
+    )
+
+    github_id: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+    )
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "organizations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
     )
 
     name: Mapped[str] = mapped_column(
@@ -35,30 +79,89 @@ class Repository(Base):
         nullable=False,
     )
 
-    github_id: Mapped[int] = mapped_column(
-        Integer,
-        unique=True,
+    full_name: Mapped[str] = mapped_column(
+        String(512),
         nullable=False,
     )
 
-    organization_id: Mapped[int] = (
-        mapped_column(
-            ForeignKey(
-                "organizations.id"
-            ),
-            nullable=False,
-            index=True,
-        )
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
     )
 
-    created_at: Mapped[datetime] = (
-        mapped_column(
-            DateTime(timezone=True),
-            server_default=func.now(),
-        )
+    visibility: Mapped[RepositoryVisibility] = mapped_column(
+        SQLEnum(
+            RepositoryVisibility,
+            name="repository_visibility",
+            native_enum=True,
+            validate_strings=True,
+        ),
+        nullable=False,
     )
 
-    organization = relationship(
+    default_branch: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    primary_language: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    clone_url: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+    )
+
+    html_url: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+    )
+
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped[Organization] = relationship(
         "Organization",
         back_populates="repositories",
     )
+
+    analysis_jobs: Mapped[list[AnalysisJob]] = relationship(
+    "AnalysisJob",
+    back_populates="repository",
+    cascade="all, delete-orphan",
+    )
+
+    architecture_snapshots: Mapped[
+        list[ArchitectureSnapshot]
+    ] = relationship(
+        "ArchitectureSnapshot",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"Repository("
+            f"id={self.id}, "
+            f"organization_id={self.organization_id}, "
+            f"github_id={self.github_id}, "
+            f"full_name={self.full_name!r}"
+            f")"
+        )

@@ -14,14 +14,12 @@ Last Updated:
     July 2026
 """
 
+from app.models.session import Session
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.session import Session
-
 
 class SessionRepository:
-
     def __init__(
         self,
         db: AsyncSession,
@@ -52,40 +50,24 @@ class SessionRepository:
         refresh_token: str,
     ) -> Session | None:
 
-        stmt = select(Session).where(
-            Session.refresh_token
-            == refresh_token
-        )
+        stmt = select(Session).where(Session.refresh_token == refresh_token)
 
-        result = await self.db.execute(
-            stmt
-        )
+        result = await self.db.execute(stmt)
 
-        return (
-            result.scalar_one_or_none()
-        )
+        return result.scalar_one_or_none()
 
     async def delete(
         self,
         session_id: int,
     ) -> None:
 
-        stmt = select(Session).where(
-            Session.id == session_id
-        )
+        stmt = select(Session).where(Session.id == session_id)
 
-        result = await self.db.execute(
-            stmt
-        )
+        result = await self.db.execute(stmt)
 
-        session = (
-            result.scalar_one_or_none()
-        )
+        session = result.scalar_one_or_none()
 
         if session:
-
-            await self.db.delete(
-                session
-            )
+            await self.db.delete(session)
 
             await self.db.commit()

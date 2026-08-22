@@ -2,15 +2,12 @@
 Database session management.
 """
 
-from typing import AsyncGenerator
+from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-)
+from collections.abc import AsyncGenerator
 
 from app.db.engine import engine
-
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 SessionLocal = async_sessionmaker(
     bind=engine,
@@ -19,7 +16,13 @@ SessionLocal = async_sessionmaker(
 )
 
 
-async def get_db() -> AsyncGenerator:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Provide an asynchronous database session.
+
+    The request/application layer owns commit and rollback
+    decisions.
+    """
 
     async with SessionLocal() as session:
         yield session
