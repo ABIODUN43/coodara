@@ -22,12 +22,17 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Expand the repository model."""
 
-    # The initial schema already provides:
-    # - repositories.github_id
-    # - repositories.name
-    # - repositories.organization_id
+    # ------------------------------------------------------------------
+    # Existing repository schema from the initial migration:
+    #
+    #   id
+    #   name
+    #   github_id
+    #   organization_id
+    #   created_at
     #
     # Add the repository metadata required by the expanded model.
+    # ------------------------------------------------------------------
 
     op.add_column(
         "repositories",
@@ -56,16 +61,35 @@ def upgrade() -> None:
         ),
     )
 
-    # Replace the old repository-wide GitHub ID uniqueness constraint
-    # with an organization-scoped uniqueness constraint.
-    op.drop_constraint(
-        op.f("uq_repository_github"),
-        "repositories",
-        type_="unique",
+    # ------------------------------------------------------------------
+    # The initial migration created:
+    #
+    #     sa.UniqueConstraint("github_id")
+    #
+    # without explicitly naming the constraint.
+    #
+    # PostgreSQL therefore creates the constraint as:
+    #
+    #     repositories_github_id_key
+    #
+    # Do not attempt to drop "uq_repository_github" because that
+    # constraint does not exist in the initial migration.
+    # ------------------------------------------------------------------
+
+    op.execute(
+        """
+        ALTER TABLE repositories
+        DROP CONSTRAINT IF EXISTS repositories_github_id_key
+        """
     )
 
+    # ------------------------------------------------------------------
+    # github_id should remain indexed, but uniqueness is now scoped to
+    # the organization.
+    # ------------------------------------------------------------------
+
     op.create_index(
-        op.f("ix_repositories_github_id"),
+        "ix_repositories_github_id",
         "repositories",
         ["github_id"],
         unique=False,
@@ -81,24 +105,27 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Revert the repository model expansion."""
 
+    # Remove organization-scoped uniqueness.
     op.drop_constraint(
         "uq_repository_organization_github",
         "repositories",
         type_="unique",
     )
 
+    # Remove the non-unique github_id index.
     op.drop_index(
-        op.f("ix_repositories_github_id"),
+        "ix_repositories_github_id",
         table_name="repositories",
     )
 
+    # Restore repository-wide github_id uniqueness.
     op.create_unique_constraint(
-        op.f("uq_repository_github"),
+        "uq_repository_github",
         "repositories",
         ["github_id"],
-        postgresql_nulls_not_distinct=False,
     )
 
+    # Remove expanded repository metadata.
     op.drop_column(
         "repositories",
         "html_url",
