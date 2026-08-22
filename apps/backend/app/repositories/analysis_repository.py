@@ -223,3 +223,18 @@ class AnalysisRepository:
         result = await self.db.execute(statement)
 
         return result.scalar_one_or_none()
+
+    async def update_result(
+        self,
+        result: AnalysisResult,
+    ) -> AnalysisResult:
+        """
+        Flush changes to an existing analysis result.
+
+        No transaction is committed here.
+        """
+
+        await self.db.flush()
+        await self.db.refresh(result)
+
+        return result
