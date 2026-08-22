@@ -63,6 +63,7 @@ class ArchitectureSnapshot(Base):
     analysis_result_id: Mapped[int] = mapped_column(
         ForeignKey(
             "analysis_results.id",
+            ondelete="CASCADE",
         ),
         nullable=False,
         unique=True,
