@@ -8,6 +8,7 @@ It deliberately knows nothing about SQLAlchemy, FastAPI, or analyzers.
 from __future__ import annotations
 
 import subprocess
+import types
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Self
@@ -139,6 +140,6 @@ class RepositoryWorkspace:
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: object | None,
+        traceback: types.TracebackType | None,
     ) -> None:
         self.close()
