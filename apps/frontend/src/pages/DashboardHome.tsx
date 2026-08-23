@@ -30,9 +30,24 @@ const healthBreakdown = [
 const trendHistory = [79, 82, 81, 85, 88, 92].map((v, i) => ({ i, v }));
 
 export function DashboardHome() {
-  const { activeProject } = useProject();
+  const { activeProject, loading: orgsLoading } = useProject();
   const [dateRange, setDateRange] = useState(dateRanges[1]);
   const [tab, setTab] = useState<Tab>("overview");
+
+  if (orgsLoading) {
+    return (
+      <div className="px-4 pb-10 pt-4 sm:px-6 text-[13px] text-[var(--cd-ink-soft)]">
+        Loading...
+      </div>
+    );
+  }
+  if (!activeProject) {
+    return (
+      <div className="px-4 pb-10 pt-4 sm:px-6 text-[13px] text-[var(--cd-ink-soft)]">
+        No organization selected — create one to get started.
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pb-10 pt-4 sm:px-6">
@@ -45,15 +60,11 @@ export function DashboardHome() {
           {activeProject.name}
         </span>
         <span className="text-[var(--cd-ink-faint)]">/</span>
-        <span className="rounded-full bg-[var(--cd-sunken)] px-2 py-0.5 text-[11px] text-[var(--cd-ink-faint)]">
-          {activeProject.members} Members
-        </span>
-        <span className="rounded-full bg-[var(--cd-sunken)] px-2 py-0.5 text-[11px] text-[var(--cd-ink-faint)]">
-          {activeProject.repositories} Repositories
-        </span>
-        <span className="rounded-full bg-[var(--cd-accent-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--cd-accent)]">
-          Owner
-        </span>
+        {activeProject.description && (
+          <span className="rounded-full bg-[var(--cd-sunken)] px-2 py-0.5 text-[11px] text-[var(--cd-ink-faint)]">
+            {activeProject.description}
+          </span>
+        )}
         <span className="text-[var(--cd-ink-faint)]">/</span>
         <span className="font-medium text-[var(--cd-ink-soft)]">Architecture</span>
       </div>

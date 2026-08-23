@@ -101,6 +101,9 @@
   --cd-warn-bg: #fcf3e1;
   --cd-risk: #d6432d;
   --cd-risk-bg: #fbeae6;
+  --cd-lang-ts: #3178c6;
+  --cd-lang-py: #3572a5;
+  --cd-lang-go: #00add8;
 }
 
 .dark {
@@ -153,6 +156,9 @@
   --cd-warn-bg: #2e2413;
   --cd-risk: #e85d45;
   --cd-risk-bg: #341e1a;
+  --cd-lang-ts: #5b9fe0;
+  --cd-lang-py: #6a9fc9;
+  --cd-lang-go: #33c9e8;
 }
 
 @layer base {

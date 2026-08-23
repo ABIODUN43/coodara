@@ -16,7 +16,7 @@ import {
   Check,
 } from "lucide-react";
 import { DISPLAY_NAME } from "@/components/dashboard/user";
-import { initialOrganizations } from "@/data/MockDashboard";
+import { useProject } from "@/context/ProjectContext";
 
 interface NavItem {
   label: string;
@@ -27,17 +27,14 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Overview", href: "/dashboard", icon: LayoutGrid },
-  { label: "Organizations", href: "/dashboard/organizations", icon: Building2, count: initialOrganizations.length },
+  { label: "Organizations", href: "/dashboard/organizations", icon: Building2 },
   { label: "Repositories", href: "/dashboard/repositories", icon: GitBranch, count: 12 },
-  { label: "Analyses", href: "/analyses", icon: Activity, count: 42 },
-  { label: "Architecture", href: "/architecture", icon: Network },
   { label: "AI Assistant", href: "/ai-assistant", icon: Bot },
   { label: "Risks", href: "/risks", icon: AlertTriangle, count: 4 },
   { label: "Reports", href: "/reports", icon: FileText },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
-import { projects, useProject } from "@/context/ProjectContext";
 
 interface SidebarProps {
   isMobileOpen: boolean;
@@ -46,7 +43,7 @@ interface SidebarProps {
 
 export function Sidebar({ isMobileOpen, onClose }: SidebarProps) {
   const location = useLocation();
-  const { activeProject, setActiveProject } = useProject();
+  const { organizations, activeProject, setActiveProject, loading: orgsLoading } = useProject();
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
 
   const initials = DISPLAY_NAME.split(" ").map((p) => p[0]).join("");
@@ -70,9 +67,9 @@ export function Sidebar({ isMobileOpen, onClose }: SidebarProps) {
             onClick={() => setIsProjectMenuOpen((v) => !v)}
             className="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-[var(--cd-sunken)]"
           >
-            <span className="text-[12.5px] font-medium text-[var(--cd-ink)]">
-              {activeProject.name}
-            </span>
+           <span className="text-[12.5px] font-medium text-[var(--cd-ink)]">
+  {activeProject?.name ?? "Select organization"}
+</span>
             <ChevronDown
               className={`h-3 w-3 flex-shrink-0 text-[var(--cd-ink-faint)] transition-transform ${
                 isProjectMenuOpen ? "rotate-180" : ""
@@ -80,32 +77,36 @@ export function Sidebar({ isMobileOpen, onClose }: SidebarProps) {
             />
           </button>
           {isProjectMenuOpen && (
-            <div className="mt-1 flex flex-col gap-px rounded-lg bg-[var(--cd-sunken)] p-1">
-              {projects.map((project) => (
-                <button
-                  key={project.id}
-                  onClick={() => {
-                    setActiveProject(project);
-                    setIsProjectMenuOpen(false);
-                  }}
-                  className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-[var(--cd-surface)]"
-                >
-                  <span
-                    className={`text-[12.5px] ${
-                      project.id === activeProject.id
-                        ? "font-medium text-[var(--cd-accent)]"
-                        : "text-[var(--cd-ink-soft)]"
-                    }`}
-                  >
-                    {project.name}
-                  </span>
-                  {project.id === activeProject.id && (
-                    <Check className="h-3.5 w-3.5 text-[var(--cd-accent)]" />
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+  <div className="mt-1 flex flex-col gap-px rounded-lg bg-[var(--cd-sunken)] p-1">
+    {orgsLoading ? (
+      <div className="px-2 py-1.5 text-[12.5px] text-[var(--cd-ink-faint)]">Loading...</div>
+    ) : (
+      organizations.map((org) => (
+        <button
+          key={org.id}
+          onClick={() => {
+            setActiveProject(org);
+            setIsProjectMenuOpen(false);
+          }}
+          className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-[var(--cd-surface)]"
+        >
+          <span
+  className={`text-[12.5px] ${
+    org.id === activeProject?.id
+      ? "font-medium text-[var(--cd-accent)]"
+      : "text-[var(--cd-ink-soft)]"
+  }`}
+>
+  {org.name}
+</span>
+{org.id === activeProject?.id && (
+  <Check className="h-3.5 w-3.5 text-[var(--cd-accent)]" />
+)}
+        </button>
+      ))
+    )}
+  </div>
+)}
         </div>
 
         <div className="px-3.5 pb-1.5 pt-3.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--cd-ink-faint)]">
@@ -147,7 +148,7 @@ export function Sidebar({ isMobileOpen, onClose }: SidebarProps) {
 
         <div className="mt-auto border-t border-[var(--cd-border-soft)] px-3.5 py-3">
           <div className="mb-1 flex justify-between text-[10.5px] text-[var(--cd-ink-faint)]">
-            <span>Analyses used</span>
+            <span>Analysis used</span>
             <span className="font-mono">143/500</span>
           </div>
           <div className="mb-3 h-1 overflow-hidden rounded-full bg-[var(--cd-sunken)]">

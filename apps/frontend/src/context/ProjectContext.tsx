@@ -1,30 +1,55 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-
-export interface Project {
-  id: string;
-  name: string;
-  members: number;
-  repositories: number;
-}
-
-export const projects: Project[] = [
-  { id: "acme", name: "Acme Engineering", members: 4, repositories: 12 },
-  { id: "nova", name: "Nova Systems", members: 7, repositories: 9 },
-  { id: "northwind", name: "Northwind Labs", members: 3, repositories: 5 },
-  { id: "orbit", name: "Orbit Health", members: 6, repositories: 14 },
-];
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { listOrganizations } from "@/api/organizations";
+import type { Organization } from "@/types/organization";
+import { USE_MOCK_ORGANIZATIONS_DATA } from "@/dev/devFlags";
+import { MOCK_ORGANIZATIONS } from "@/data/mockOrganizations";
 
 interface ProjectContextValue {
-  activeProject: Project;
-  setActiveProject: (project: Project) => void;
+  organizations: Organization[];
+  activeProject: Organization | null;
+  setActiveProject: (org: Organization) => void;
+  loading: boolean;
+  refetch: () => Promise<void>;
 }
 
 const ProjectContext = createContext<ProjectContextValue | undefined>(undefined);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [activeProject, setActiveProject] = useState(projects[0]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [activeProject, setActiveProjectState] = useState<Organization | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    if (USE_MOCK_ORGANIZATIONS_DATA) {
+      setOrganizations(MOCK_ORGANIZATIONS);
+      setActiveProjectState((prev) => prev ?? MOCK_ORGANIZATIONS[0] ?? null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const orgs = await listOrganizations();
+      setOrganizations(orgs);
+      setActiveProjectState((prev) => prev ?? orgs[0] ?? null);
+    } catch {
+      setOrganizations([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  function setActiveProject(org: Organization) {
+    setActiveProjectState(org);
+  }
+
   return (
-    <ProjectContext.Provider value={{ activeProject, setActiveProject }}>
+    <ProjectContext.Provider
+      value={{ organizations, activeProject, setActiveProject, loading, refetch: load }}
+    >
       {children}
     </ProjectContext.Provider>
   );

@@ -1,88 +1,96 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Dropdown, Label } from "@heroui/react";
-import { Search, GitBranch as RepoIcon, ChevronRight, ChevronDown, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Search, GitBranch as RepoIcon, ChevronRight, Plus, X } from "lucide-react";
 import { useProject } from "@/context/ProjectContext";
-import { repos as allRepos, BAND, bandFor, type Band } from "@/data/MockDashboard";
-
-type SortMode = "health-desc" | "health-asc" | "name" | "updated";
-
-const SORT_OPTIONS: { id: SortMode; label: string }[] = [
-  { id: "health-desc", label: "Health (high to low)" },
-  { id: "health-asc", label: "Health (low to high)" },
-  { id: "name", label: "Name (A–Z)" },
-  { id: "updated", label: "Recently updated" },
-];
-
-function miniHeatmap(seed: number) {
-  const cells: string[] = [];
-  for (let i = 0; i < 12; i++) {
-    const v = Math.abs(Math.sin(seed * 13.7 + i * 3.1));
-    let color = "var(--cd-sunken)";
-    if (v > 0.75) color = "var(--cd-accent)";
-    else if (v > 0.5) color = "var(--cd-accent-soft)";
-    else if (v > 0.3) color = "var(--cd-border)";
-    cells.push(color);
-  }
-  return cells;
-}
-
-function highlight(text: string, term: string) {
-  if (!term) return text;
-  const idx = text.toLowerCase().indexOf(term.toLowerCase());
-  if (idx === -1) return text;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark className="rounded-[3px] bg-[var(--cd-accent-soft)] px-px text-[var(--cd-accent)]">
-        {text.slice(idx, idx + term.length)}
-      </mark>
-      {text.slice(idx + term.length)}
-    </>
-  );
-}
+import { listRepositories, importRepository } from "@/api/repositories";
+import type { Repository } from "@/types/repository";
+import { USE_MOCK_REPOSITORIES_DATA } from "@/dev/devFlags";
+import { getMockRepositoriesForOrg } from "@/data/mockRepositories";
 
 export function RepositoriesPage() {
   const { activeProject } = useProject();
-  const [activeBand, setActiveBand] = useState<Band | "all">("all");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortMode, setSortMode] = useState<SortMode>("health-desc");
+  const navigate = useNavigate();
 
-  const counts = useMemo(
-    () => ({
-      all: allRepos.length,
-      good: allRepos.filter((r) => bandFor(r.score) === "good").length,
-      warn: allRepos.filter((r) => bandFor(r.score) === "warn").length,
-      risk: allRepos.filter((r) => bandFor(r.score) === "risk").length,
-    }),
-    []
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [owner, setOwner] = useState("");
+  const [repoName, setRepoName] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function loadRepos() {
+    if (!activeProject) return;
+    if (USE_MOCK_REPOSITORIES_DATA) {
+      setRepos(getMockRepositoriesForOrg(activeProject.id));
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await listRepositories(activeProject.id, 1, 100);
+      setRepos(res.items);
+    } catch {
+      setLoadError("Couldn't load repositories.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadRepos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProject?.id]);
+
+  async function handleImport() {
+    if (!activeProject || !owner.trim() || !repoName.trim()) return;
+    if (USE_MOCK_REPOSITORIES_DATA) {
+      setImportError("Importing repositories is disabled while running on demo data.");
+      return;
+    }
+    setImporting(true);
+    setImportError(null);
+    try {
+      const created = await importRepository(activeProject.id, {
+        owner: owner.trim(),
+        name: repoName.trim(),
+      });
+      setIsImportOpen(false);
+      setOwner("");
+      setRepoName("");
+      await loadRepos();
+      navigate(`/dashboard/organizations/${activeProject.id}/repositories/${created.id}/analysis`);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 409) setImportError("This repository is already imported.");
+      else if (status === 404) setImportError("GitHub repository not found.");
+      else if (status === 403) setImportError("GitHub repository access denied.");
+      else setImportError(err?.response?.data?.detail ?? "Failed to import repository.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const list = repos.filter(
+    (r) =>
+      !searchTerm ||
+      r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (r.primary_language ?? "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const list = useMemo(() => {
-    let filtered = allRepos.filter((r) => {
-      const matchesBand = activeBand === "all" || bandFor(r.score) === activeBand;
-      const matchesSearch =
-        !searchTerm ||
-        r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.lang.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesBand && matchesSearch;
-    });
-
-    filtered = [...filtered];
-    if (sortMode === "health-desc") filtered.sort((a, b) => b.score - a.score);
-    else if (sortMode === "health-asc") filtered.sort((a, b) => a.score - b.score);
-    else if (sortMode === "name") filtered.sort((a, b) => a.name.localeCompare(b.name));
-    else if (sortMode === "updated") filtered.sort((a, b) => a.updatedRank - b.updatedRank);
-
-    return filtered;
-  }, [activeBand, searchTerm, sortMode]);
-
-  const filters: { id: Band | "all"; label: string; count: number; dot?: string }[] = [
-    { id: "all", label: "All", count: counts.all },
-    { id: "good", label: "Healthy", count: counts.good, dot: BAND.good.color },
-    { id: "warn", label: "Watch", count: counts.warn, dot: BAND.warn.color },
-    { id: "risk", label: "At risk", count: counts.risk, dot: BAND.risk.color },
-  ];
+  if (!activeProject) {
+    return (
+      <div className="px-4 pb-10 pt-4 sm:px-6">
+        <div className="rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-8 text-center text-[13px] text-[var(--cd-ink-soft)]">
+          Select or create an organization first.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pb-10 pt-4 sm:px-6">
@@ -102,13 +110,17 @@ export function RepositoriesPage() {
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[18px] font-semibold tracking-tight text-[var(--cd-ink)]">Repositories</h1>
-        <span className="text-[12px] text-[var(--cd-ink-faint)]">
-          <span className="font-mono">{allRepos.length}</span> repositories
-        </span>
+        <button
+          onClick={() => setIsImportOpen(true)}
+          className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Import repository
+        </button>
       </div>
 
       <div className="rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)]">
-        <div className="flex flex-wrap items-center gap-2.5 px-5 pb-0 pt-4">
+        <div className="flex flex-wrap items-center gap-2.5 px-5 py-4">
           <div className="flex min-w-[200px] max-w-[340px] flex-1 items-center gap-1.5 rounded-lg border border-[var(--cd-border)] px-3 py-2 focus-within:border-[var(--cd-accent)]">
             <Search className="h-3.5 w-3.5 flex-shrink-0 text-[var(--cd-ink-faint)]" />
             <input
@@ -119,120 +131,143 @@ export function RepositoriesPage() {
               className="w-full bg-transparent text-[12.5px] text-[var(--cd-ink)] outline-none placeholder:text-[var(--cd-ink-faint)]"
             />
           </div>
-          <Dropdown>
-            <Dropdown.Trigger className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-[7px] text-[12px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)]">
-              Sort: {SORT_OPTIONS.find((o) => o.id === sortMode)?.label}
-              <ChevronDown className="h-3 w-3" />
-            </Dropdown.Trigger>
-            <Dropdown.Popover className="w-[220px]">
-              <Dropdown.Menu>
-                {SORT_OPTIONS.map((opt) => (
-                  <Dropdown.Item
-                    key={opt.id}
-                    id={opt.id}
-                    textValue={opt.label}
-                    onAction={() => setSortMode(opt.id)}
-                    className="cursor-pointer"
-                  >
-                    <div className="flex w-full items-center justify-between gap-2">
-                      <Label>{opt.label}</Label>
-                      {opt.id === sortMode && <Check className="h-3.5 w-3.5 text-[var(--cd-accent)]" />}
-                    </div>
-                  </Dropdown.Item>
-                ))}
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
+          <span className="text-[12px] text-[var(--cd-ink-faint)]">
+            <span className="font-mono">{repos.length}</span> repositories
+          </span>
         </div>
 
-        <div className="flex flex-wrap gap-2 px-5 pb-1 pt-3">
-          {filters.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setActiveBand(f.id)}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-[12px] font-medium ${
-                activeBand === f.id
-                  ? "border-transparent bg-[var(--cd-accent-soft)] text-[var(--cd-accent)]"
-                  : "border-[var(--cd-border)] text-[var(--cd-ink-soft)]"
-              }`}
-            >
-              {f.dot && <span className="h-[7px] w-[7px] rounded-full" style={{ background: f.dot }} />}
-              {f.label}
-              <span className={`font-mono text-[11px] ${activeBand === f.id ? "text-[var(--cd-accent)]" : "text-[var(--cd-ink-faint)]"}`}>
-                {f.count}
-              </span>
-            </button>
-          ))}
-        </div>
+        {loading && (
+          <div className="p-8 text-center text-[13px] text-[var(--cd-ink-soft)]">Loading repositories...</div>
+        )}
 
-        <div className="mt-2">
-          {list.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 px-5 py-14 text-center text-[var(--cd-ink-faint)]">
-              <Search className="mb-1 h-7 w-7" />
-              <b className="text-[13px] font-semibold text-[var(--cd-ink-soft)]">No repositories match</b>
-              <span className="max-w-[320px] text-[12px]">Try a different search term or clear the active filter.</span>
+        {!loading && loadError && (
+          <div className="p-8 text-center text-[13px] text-[var(--cd-risk)]">{loadError}</div>
+        )}
+
+        {!loading && !loadError && repos.length === 0 && (
+          <div className="flex flex-col items-center gap-3 px-5 py-14 text-center">
+            <div className="text-[13px] font-semibold text-[var(--cd-ink-soft)]">
+              No repositories connected yet.
             </div>
-          ) : (
-            list.map((r, i) => {
-              const band = bandFor(r.score);
-              return (
-                <div
-                  key={r.id}
-                  className="flex cursor-pointer items-center gap-3.5 border-b border-[var(--cd-border-soft)] px-5 py-3.5 last:border-b-0 hover:bg-[var(--cd-sunken)]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <RepoIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--cd-ink-faint)]" />
-                      <span className="truncate font-mono text-[13px] font-semibold text-[var(--cd-ink)]">
-                        <span className="font-normal text-[var(--cd-ink-faint)]">{activeProject.id}/</span>
-                        {highlight(r.name, searchTerm)}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 truncate text-[12px] text-[var(--cd-ink-soft)]">{r.desc}</div>
-                    <div className="mt-1.5 flex items-center gap-3.5 text-[11.5px] text-[var(--cd-ink-faint)]">
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full" style={{ background: r.langColor }} />
-                        {r.lang}
-                      </span>
-                      <span
-                        className="inline-flex items-center gap-1 rounded-[5px] px-[7px] py-[3px] text-[10.5px] font-semibold"
-                        style={{ background: BAND[band].bg, color: BAND[band].color }}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: "currentColor" }} />
-                        {BAND[band].label}
-                      </span>
-                    </div>
-                  </div>
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-2 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Import Repository
+            </button>
+          </div>
+        )}
 
-                  <div className="hidden flex-shrink-0 gap-[2px] sm:grid sm:h-6 sm:w-[70px] sm:grid-cols-6 sm:grid-rows-2 sm:[grid-auto-flow:column]">
-                    {miniHeatmap(i + 1).map((color, idx) => (
-                      <span key={idx} className="h-[5px] w-[5px] rounded-[1.5px]" style={{ background: color }} />
-                    ))}
-                  </div>
+        {!loading && !loadError && repos.length > 0 && list.length === 0 && (
+          <div className="flex flex-col items-center gap-2 px-5 py-14 text-center text-[var(--cd-ink-faint)]">
+            <Search className="mb-1 h-7 w-7" />
+            <b className="text-[13px] font-semibold text-[var(--cd-ink-soft)]">No repositories match</b>
+            <span className="max-w-[320px] text-[12px]">Try a different search term.</span>
+          </div>
+        )}
 
-                  <div className="flex flex-shrink-0 items-center gap-4">
-                    <div className="text-right">
-                      <div className="font-mono text-[15px] font-semibold" style={{ color: BAND[band].color }}>
-                        {r.score.toFixed(1)}
-                        <span className="font-normal text-[var(--cd-ink-faint)]">/10</span>
-                      </div>
-                      <div className="mt-1.5 h-[7px] w-[88px] overflow-hidden rounded-full bg-[var(--cd-sunken)]">
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${r.score * 10}%`, background: BAND[band].color }}
-                        />
-                      </div>
-                    </div>
-                    <div className="hidden w-16 text-right text-[11.5px] text-[var(--cd-ink-faint)] sm:block">
-                      {r.updatedLabel}
-                    </div>
-                  </div>
+        {!loading &&
+          !loadError &&
+          list.map((r) => (
+            <Link
+              key={r.id}
+              to={`/dashboard/organizations/${activeProject.id}/repositories/${r.id}/analysis`}
+              className="flex cursor-pointer items-center gap-3.5 border-b border-[var(--cd-border-soft)] px-5 py-3.5 last:border-b-0 hover:bg-[var(--cd-sunken)]"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <RepoIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--cd-ink-faint)]" />
+                  <span className="truncate font-mono text-[13px] font-semibold text-[var(--cd-ink)]">
+                    {r.full_name}
+                  </span>
                 </div>
-              );
-            })
-          )}
-        </div>
+                {r.description && (
+                  <div className="mt-0.5 truncate text-[12px] text-[var(--cd-ink-soft)]">{r.description}</div>
+                )}
+                <div className="mt-1.5 flex items-center gap-3.5 text-[11.5px] text-[var(--cd-ink-faint)]">
+                  {r.primary_language && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-[var(--cd-accent)]" />
+                      {r.primary_language}
+                    </span>
+                  )}
+                  <span className="capitalize">{r.visibility}</span>
+                  <span>{r.default_branch}</span>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 flex-shrink-0 text-[var(--cd-ink-faint)]" />
+            </Link>
+          ))}
       </div>
+
+      {isImportOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setIsImportOpen(false)}
+        >
+          <div
+            className="w-full max-w-[400px] rounded-[14px] border border-[var(--cd-border)] bg-[var(--cd-surface)] p-[22px] shadow-[0_16px_40px_rgba(20,20,30,0.16)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-[15px] font-semibold text-[var(--cd-ink)]">Import GitHub repository</h2>
+              <button
+                onClick={() => setIsImportOpen(false)}
+                aria-label="Close"
+                className="cursor-pointer text-[var(--cd-ink-faint)] hover:text-[var(--cd-ink)]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {importError && (
+              <div className="mb-3 rounded-lg bg-[var(--cd-risk-bg)] px-3 py-2 text-[12px] text-[var(--cd-risk)]">
+                {importError}
+              </div>
+            )}
+
+            <div className="mb-3 flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-[var(--cd-ink-soft)]">Owner</span>
+              <input
+                type="text"
+                autoFocus
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+                placeholder="e.g. octocat"
+                className="rounded-lg border border-[var(--cd-border)] bg-[var(--cd-sunken)] px-[11px] py-[9px] text-[13px] text-[var(--cd-ink)] outline-none focus:border-[var(--cd-accent)] focus:bg-[var(--cd-surface)]"
+              />
+            </div>
+            <div className="mb-3 flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-[var(--cd-ink-soft)]">Repository name</span>
+              <input
+                type="text"
+                value={repoName}
+                onChange={(e) => setRepoName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleImport()}
+                placeholder="e.g. hello-world"
+                className="rounded-lg border border-[var(--cd-border)] bg-[var(--cd-sunken)] px-[11px] py-[9px] text-[13px] text-[var(--cd-ink)] outline-none focus:border-[var(--cd-accent)] focus:bg-[var(--cd-surface)]"
+              />
+            </div>
+
+            <div className="mt-[18px] flex justify-end gap-2.5">
+              <button
+                onClick={() => setIsImportOpen(false)}
+                className="cursor-pointer rounded-lg px-3.5 py-2 text-[12.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={importing || !owner.trim() || !repoName.trim()}
+                className="cursor-pointer rounded-lg bg-[var(--cd-accent)] px-3.5 py-2 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {importing ? "Importing..." : "Import repository"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { ThemeToggle } from "./ThemeToggle";
 import { DISPLAY_NAME } from "@/components/dashboard/user";
+import { useDashboardActionContext } from "@/context/DashboardActionContext";
 
 interface Notification {
   id: string;
@@ -46,6 +47,7 @@ interface TopNavbarProps {
 
 export function TopNavbar({ onOpenSidebar }: TopNavbarProps) {
   const { user, logout } = useAuth();
+  const { action } = useDashboardActionContext();
   const [isImportOpen, setIsImportOpen] = useState(false);
   const importRef = useRef<HTMLDivElement>(null);
 
@@ -78,6 +80,7 @@ export function TopNavbar({ onOpenSidebar }: TopNavbarProps) {
   }
 
   const initials = DISPLAY_NAME.split(" ").map((p) => p[0]).join("");
+  const ActionIcon = action?.icon ?? Plus;
 
   return (
     <header className="sticky top-0 z-30 flex h-[52px] flex-shrink-0 items-center gap-2 border-b border-[var(--cd-border)] bg-[var(--cd-surface)] px-3 sm:gap-3 sm:px-5">
@@ -205,39 +208,59 @@ export function TopNavbar({ onOpenSidebar }: TopNavbarProps) {
         </Drawer.Backdrop>
       </Drawer>
 
-      <div className="relative" ref={importRef}>
-        <Button
-          variant="secondary"
-          onClick={() => setIsImportOpen((v) => !v)}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[var(--cd-accent)] p-0 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)] md:h-auto md:w-auto md:px-3 md:py-1.5"
+      {/* Primary action button — shows whatever the current page registered
+          via useDashboardAction (e.g. "Create organization" on
+          OrganizationsPage, "Invite member" on OrganizationDetailPage).
+          Falls back to the default Import Repository dropdown when no
+          page has claimed it (Dashboard overview, Repositories, Analysis,
+          Architecture, etc. all use this default, unchanged). */}
+      {action ? (
+        <button
+          onClick={action.onClick}
+          className={
+            action.variant === "outline"
+              ? "flex h-8 w-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] p-0 text-[12.5px] font-medium text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)] md:h-auto md:w-auto md:px-3 md:py-1.5"
+              : "flex h-8 w-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[var(--cd-accent)] p-0 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)] md:h-auto md:w-auto md:px-3 md:py-1.5"
+          }
         >
-          <Plus className="h-4 w-4 flex-shrink-0" />
-          <span className="hidden md:inline">Import repository</span>
-        </Button>
-        {isImportOpen && (
-          <div className="absolute right-0 z-20 mt-1.5 w-[200px] overflow-hidden rounded-[10px] border border-[var(--cd-border)] bg-[var(--cd-surface)] shadow-[0_10px_28px_rgba(20,20,30,0.1)]">
-            <div className="flex items-center justify-between border-b border-[var(--cd-border-soft)] px-3 py-2">
-              <span className="text-[11.5px] font-semibold text-[var(--cd-ink-soft)]">Connect a source</span>
-              <button
-                onClick={() => setIsImportOpen(false)}
-                className="cursor-pointer text-[var(--cd-ink-faint)]"
-                aria-label="Close"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+          <ActionIcon className="h-4 w-4 flex-shrink-0" />
+          <span className="hidden md:inline">{action.label}</span>
+        </button>
+      ) : (
+        <div className="relative" ref={importRef}>
+          <Button
+            variant="secondary"
+            onClick={() => setIsImportOpen((v) => !v)}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[var(--cd-accent)] p-0 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)] md:h-auto md:w-auto md:px-3 md:py-1.5"
+          >
+            <Plus className="h-4 w-4 flex-shrink-0" />
+            <span className="hidden md:inline">Import repository</span>
+          </Button>
+          {isImportOpen && (
+            <div className="absolute right-0 z-20 mt-1.5 w-[200px] overflow-hidden rounded-[10px] border border-[var(--cd-border)] bg-[var(--cd-surface)] shadow-[0_10px_28px_rgba(20,20,30,0.1)]">
+              <div className="flex items-center justify-between border-b border-[var(--cd-border-soft)] px-3 py-2">
+                <span className="text-[11.5px] font-semibold text-[var(--cd-ink-soft)]">Connect a source</span>
+                <button
+                  onClick={() => setIsImportOpen(false)}
+                  className="cursor-pointer text-[var(--cd-ink-faint)]"
+                  aria-label="Close"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {["GitHub", "GitLab", "Bitbucket"].map((source) => (
+                <button
+                  key={source}
+                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12.5px] text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)]"
+                >
+                  <GitMerge className="h-3.5 w-3.5 text-[var(--cd-ink-soft)]" />
+                  {source}
+                </button>
+              ))}
             </div>
-            {["GitHub", "GitLab", "Bitbucket"].map((source) => (
-              <button
-                key={source}
-                className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12.5px] text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)]"
-              >
-                <GitMerge className="h-3.5 w-3.5 text-[var(--cd-ink-soft)]" />
-                {source}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <Dropdown>
         <Dropdown.Trigger className="cursor-pointer rounded-full">

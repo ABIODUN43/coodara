@@ -12,6 +12,8 @@ import { DashboardHome } from "@/pages/DashboardHome";
 import { OrganizationsPage } from "@/pages/OrganizationsPage";
 import { OrganizationDetailPage } from "@/pages/OrganizationDetailPage";
 import { RepositoriesPage } from "@/pages/RepositoriesPage";
+import { AnalysisPage } from "@/pages/AnalysisPage";
+import { ArchitecturePage } from "@/pages/ArchitecturePage";
 
 export const router = createBrowserRouter([
   {
@@ -52,6 +54,14 @@ export const router = createBrowserRouter([
           {
             path: "repositories",
             element: <RepositoriesPage />,
+          },
+          {
+            path: "organizations/:orgId/repositories/:repoId/analysis",
+            element: <AnalysisPage />,
+          },
+          {
+            path: "organizations/:orgId/repositories/:repoId/architecture",
+            element: <ArchitecturePage />,
           },
         ],
       },

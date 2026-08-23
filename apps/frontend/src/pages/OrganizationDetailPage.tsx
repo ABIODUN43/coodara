@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   LayoutGrid,
@@ -8,29 +7,65 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import {
-  initialOrganizations,
-  repos,
-  members,
-  activity,
-  BAND,
-  bandFor,
-} from "@/data/MockDashboard";
+import { members, activity } from "@/data/MockDashboard";
+import { getOrganization } from "@/api/organizations";
+import { listRepositories } from "@/api/repositories";
+import type { Organization } from "@/types/organization";
+import type { Repository } from "@/types/repository";
+import { useEffect, useState } from "react";
+import { USE_MOCK_ORGANIZATIONS_DATA, USE_MOCK_REPOSITORIES_DATA } from "@/dev/devFlags";
+import { MOCK_ORGANIZATIONS } from "@/data/mockOrganizations";
+import { getMockRepositoriesForOrg } from "@/data/mockRepositories";
+import { Dropdown, Label } from "@heroui/react";
+import { ChevronDown } from "lucide-react";
+import { useDashboardAction } from "@/context/DashboardActionContext";
 
 type Tab = "overview" | "repositories" | "members" | "settings";
 
 export function OrganizationDetailPage() {
   const { orgId } = useParams<{ orgId: string }>();
   const navigate = useNavigate();
-  const org = initialOrganizations.find((o) => o.id === orgId) ?? initialOrganizations[0];
+
+  const [org, setOrg] = useState<Organization | null>(null);
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("overview");
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [digestOn, setDigestOn] = useState(true);
 
-  const sortedByScore = [...repos].sort((a, b) => b.score - a.score);
-  const topRepos = sortedByScore.slice(0, 3);
+  // TopNavbar's primary action becomes "Invite member" (white/outline
+  // style) while this page is open, instead of the default
+  // "Import repository". Applies across all tabs on this page, not just
+  // the Members tab.
+  useDashboardAction(
+    { label: "Invite member", onClick: () => setIsInviteOpen(true), icon: UserPlus, variant: "outline" },
+    [orgId]
+  );
+
+  useEffect(() => {
+    if (!orgId) return;
+    if (USE_MOCK_ORGANIZATIONS_DATA) {
+      const mockOrg = MOCK_ORGANIZATIONS.find((o) => String(o.id) === orgId) ?? MOCK_ORGANIZATIONS[0];
+      setOrg(mockOrg);
+      setRepos(getMockRepositoriesForOrg(mockOrg.id));
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError(null);
+    Promise.all([getOrganization(orgId), listRepositories(orgId, 1, 100)])
+      .then(([orgData, repoData]) => {
+        setOrg(orgData);
+        setRepos(repoData.items);
+      })
+      .catch(() => setLoadError("Couldn't load this organization."))
+      .finally(() => setLoading(false));
+  }, [orgId]);
+
+  const topRepos = repos.slice(0, 3);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
@@ -39,56 +74,86 @@ export function OrganizationDetailPage() {
     { id: "settings", label: "Settings" },
   ];
 
-  const kpis = [
-    { label: "Members", value: members.length },
-    { label: "Repositories", value: `${repos.length} of 12` },
-    { label: "Avg. architecture health", value: "92", sub: "out of 100" },
-    { label: "Open risks", value: "3", sub: "1 critical" },
-  ];
+ const kpis: { label: string; value: number | string; sub?: string }[] = [
+  { label: "Members", value: members.length },
+  { label: "Repositories", value: repos.length },
+  { label: "Avg. architecture health", value: 92, sub: "out of 100" },
+  { label: "Open risks", value: 3, sub: "1 critical" },
+];
 
-  function RepoRow({ repo }: { repo: (typeof repos)[number] }) {
-    const band = bandFor(repo.score);
-    return (
-      <button
-        onClick={() => navigate("/dashboard")}
-        className="flex w-full cursor-pointer items-center gap-3.5 border-b border-[var(--cd-border-soft)] px-5 py-3.5 text-left last:border-b-0 hover:bg-[var(--cd-sunken)]"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <RepoIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--cd-ink-faint)]" />
-            <span className="truncate font-mono text-[13px] font-semibold text-[var(--cd-ink)]">
-              <span className="font-normal text-[var(--cd-ink-faint)]">{org.id}/</span>
-              {repo.name}
-            </span>
-          </div>
-          <div className="mt-0.5 truncate text-[12px] text-[var(--cd-ink-soft)]">{repo.desc}</div>
-          <div className="mt-1.5 flex items-center gap-3.5 text-[11.5px] text-[var(--cd-ink-faint)]">
+    const LANG_COLORS: Record<string, string> = {
+  TypeScript: "var(--cd-lang-ts, #3178C6)",
+  Python: "var(--cd-lang-py, #3572A5)",
+  Go: "var(--cd-lang-go, #00ADD8)",
+};
+
+function RepoRow({ repo }: { repo: Repository }) {
+  const [org, name] = repo.full_name.split("/");
+  return (
+    <button
+      onClick={() => navigate(`/dashboard/organizations/${orgId}/repositories/${repo.id}/analysis`)}
+      className="flex w-full cursor-pointer items-center gap-3.5 border-b border-[var(--cd-border-soft)] px-5 py-3.5 text-left last:border-b-0 hover:bg-[var(--cd-sunken)]"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <RepoIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--cd-ink-faint)]" />
+          <span className="truncate font-mono text-[13px] text-[var(--cd-ink)]">
+            <span className="text-[var(--cd-ink-faint)]">{org}/</span>
+            <b className="font-semibold">{name}</b>
+          </span>
+        </div>
+        {repo.description && (
+  <div className="mt-0.5 truncate text-[12px] text-[var(--cd-ink-soft)]">{repo.description}</div>
+)}
+        <div className="mt-1.5 flex items-center gap-3.5 text-[11.5px] text-[var(--cd-ink-faint)]">
+          {repo.primary_language && (
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full" style={{ background: repo.langColor }} />
-              {repo.lang}
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: LANG_COLORS[repo.primary_language] ?? "var(--cd-accent)" }}
+              />
+              {repo.primary_language}
             </span>
-            <span
-              className="inline-flex items-center gap-1 rounded-[5px] px-[7px] py-[3px] text-[10.5px] font-semibold"
-              style={{ background: BAND[band].bg, color: BAND[band].color }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: "currentColor" }} />
-              {BAND[band].label}
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-4">
-          <div
-            className="font-mono text-[15px] font-semibold"
-            style={{ color: BAND[band].color }}
+          )}
+          <span
+            className={`inline-flex items-center gap-1 rounded-[5px] px-[7px] py-[3px] text-[10.5px] font-semibold ${
+              repo.visibility === "private"
+                ? "bg-[var(--cd-sunken)] text-[var(--cd-ink-soft)]"
+                : "bg-[var(--cd-good-bg)] text-[var(--cd-good)]"
+            }`}
           >
-            {repo.score.toFixed(1)}
-            <span className="font-normal text-[var(--cd-ink-faint)]">/10</span>
-          </div>
-          <div className="w-16 text-right text-[11.5px] text-[var(--cd-ink-faint)]">
-            {repo.updatedLabel}
-          </div>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "currentColor" }} />
+            {repo.visibility === "private" ? "Private" : "Public"}
+          </span>
         </div>
-      </button>
+      </div>
+      <div className="flex flex-shrink-0 items-center gap-4">
+        <span className="hidden text-[11.5px] text-[var(--cd-ink-faint)] sm:inline">
+          {repo.last_synced_at
+            ? new Date(repo.last_synced_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            : "Never synced"}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+    if (loading) {
+    return (
+      <div className="px-4 pb-10 pt-4 sm:px-6">
+        <div className="rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-8 text-center text-[13px] text-[var(--cd-ink-soft)]">
+          Loading organization...
+        </div>
+      </div>
+    );
+  }
+  if (loadError || !org) {
+    return (
+      <div className="px-4 pb-10 pt-4 sm:px-6">
+        <div className="rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-8 text-center text-[13px] text-[var(--cd-risk)]">
+          {loadError ?? "Organization not found."}
+        </div>
+      </div>
     );
   }
 
@@ -112,11 +177,11 @@ export function OrganizationDetailPage() {
               {org.name}
             </h1>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12.5px] text-[var(--cd-ink-soft)]">
-              <span className="rounded-full bg-[var(--cd-accent-soft)] px-2 py-0.5 text-[10.5px] font-semibold capitalize text-[var(--cd-accent)]">
-                {org.role}
-              </span>
-              <span>{org.members} members · {org.repos} repositories</span>
-            </div>
+  <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--cd-accent-soft)] text-[var(--cd-accent)] capitalize">
+    Owner
+  </span>
+  <span>{members.length} members · {repos.length} repositories</span>
+</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -165,23 +230,23 @@ export function OrganizationDetailPage() {
 
       {tab === "overview" && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <div className="rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)]">
-            <div className="flex items-center justify-between border-b border-[var(--cd-border-soft)] px-4 py-3.5">
-              <h3 className="text-[12.5px] font-semibold text-[var(--cd-ink)]">Recent activity</h3>
-              <span className="flex cursor-pointer items-center gap-0.5 text-[11.5px] font-medium text-[var(--cd-accent)]">
-                Full history <ChevronRight className="h-3 w-3" />
-              </span>
-            </div>
-            {activity.map((a) => (
-              <div key={a.id} className="flex gap-2.5 border-b border-[var(--cd-border-soft)] px-5 py-2.5 last:border-b-0">
-                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--cd-accent)]" />
-                <div>
-                  <div className="text-[12.5px] text-[var(--cd-ink)]">{a.text}</div>
-                  <div className="mt-0.5 text-[11px] text-[var(--cd-ink-faint)]">{a.time}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <div className="self-start rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)]">
+  <div className="flex items-center justify-between border-b border-[var(--cd-border-soft)] px-4 py-3.5">
+    <h3 className="text-[12.5px] font-semibold text-[var(--cd-ink)]">Recent activity</h3>
+    <span className="flex cursor-pointer items-center gap-0.5 text-[11.5px] font-medium text-[var(--cd-accent)]">
+      Full history <ChevronRight className="h-3 w-3" />
+    </span>
+  </div>
+  {activity.map((a) => (
+    <div key={a.id} className="flex gap-2.5 border-b border-[var(--cd-border-soft)] px-5 py-2.5 last:border-b-0">
+      <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--cd-accent)]" />
+      <div>
+        <div className="text-[12.5px] text-[var(--cd-ink)]">{a.text}</div>
+        <div className="mt-0.5 text-[11px] text-[var(--cd-ink-faint)]">{a.time}</div>
+      </div>
+    </div>
+  ))}
+</div>
 
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-[18px] rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-[18px]">
@@ -252,15 +317,27 @@ export function OrganizationDetailPage() {
                 <div className="font-mono text-[11.5px] text-[var(--cd-ink-faint)]">@{m.handle}</div>
               </div>
               <div className="ml-auto flex items-center gap-2.5">
-                <select
-                  defaultValue={m.role}
-                  disabled={m.role === "owner"}
-                  className="rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-[5px] text-[12px] font-medium text-[var(--cd-ink-soft)]"
-                >
-                  {m.role === "owner" && <option value="owner">Owner</option>}
-                  <option value="admin">Admin</option>
-                  <option value="member">Member</option>
-                </select>
+                {m.role === "owner" ? (
+                  <span className="rounded-lg border border-[var(--cd-border)] px-2.5 py-[5px] text-[12px] font-medium text-[var(--cd-ink-soft)]">
+                    Owner
+                  </span>
+                ) : (
+                  <Dropdown>
+                    <Dropdown.Trigger className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-[5px] text-[12px] font-medium capitalize text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)]">
+                      {m.role}
+                      <ChevronDown className="h-3 w-3 text-[var(--cd-ink-faint)]" />
+                    </Dropdown.Trigger>
+                    <Dropdown.Popover className="w-[140px]">
+                      <Dropdown.Menu>
+                        {["admin", "member"].map((r) => (
+                          <Dropdown.Item key={r} id={r} textValue={r} className="cursor-pointer">
+                            <Label className="capitalize">{r}</Label>
+                          </Dropdown.Item>
+                        ))}
+                      </Dropdown.Menu>
+                    </Dropdown.Popover>
+                  </Dropdown>
+                )}
                 {m.role !== "owner" && (
                   <button className="cursor-pointer rounded-lg px-2.5 py-[5px] text-[11.5px] text-[var(--cd-ink-faint)] hover:bg-[var(--cd-risk-bg)] hover:text-[var(--cd-risk)]">
                     Remove
@@ -302,26 +379,28 @@ export function OrganizationDetailPage() {
                 className="w-[120px] rounded-[7px] border border-[var(--cd-border)] px-3 py-2 text-[12.5px] text-[var(--cd-ink)]"
               />
             </div>
-            <div className="flex items-center justify-between gap-5 px-5 py-4">
-              <div>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-[var(--cd-ink)]">Weekly architecture digest</div>
-                <div className="mt-0.5 max-w-[380px] text-[11.5px] text-[var(--cd-ink-faint)]">
+                <div className="mt-0.5 text-[11.5px] text-[var(--cd-ink-faint)]">
                   Email a summary of architecture health to owners and admins.
                 </div>
               </div>
               <button
                 onClick={() => setDigestOn((v) => !v)}
-                className={`relative h-[22px] w-[38px] flex-shrink-0 cursor-pointer rounded-full border transition-colors ${
+                style={{ width: "38px", height: "22px" }}
+                className={`relative ml-auto flex-shrink-0 cursor-pointer rounded-full border transition-colors ${
                   digestOn
                     ? "border-[var(--cd-accent)] bg-[var(--cd-accent)]"
                     : "border-[var(--cd-border)] bg-[var(--cd-sunken)]"
                 }`}
               >
                 <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                    digestOn ? "translate-x-4" : "translate-x-0.5"
-                  }`}
-                />
+  style={{ width: "16px", height: "16px" }}
+  className={`absolute left-[2px] top-[2px] rounded-full bg-white shadow transition-transform ${
+    digestOn ? "translate-x-[18px]" : "translate-x-0"
+  }`}
+/>
               </button>
             </div>
           </div>
@@ -391,10 +470,21 @@ export function OrganizationDetailPage() {
               placeholder="teammate@company.com"
               className="mb-3.5 w-full rounded-lg border border-[var(--cd-border)] px-[11px] py-[9px] text-[13px] text-[var(--cd-ink)]"
             />
-            <select className="mb-3.5 w-full rounded-lg border border-[var(--cd-border)] px-[11px] py-[9px] text-[13px] text-[var(--cd-ink)]">
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
+            <Dropdown>
+              <Dropdown.Trigger className="mb-3.5 flex w-full cursor-pointer items-center justify-between rounded-lg border border-[var(--cd-border)] px-[11px] py-[9px] text-left text-[13px] text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)]">
+                Member
+                <ChevronDown className="h-3.5 w-3.5 text-[var(--cd-ink-faint)]" />
+              </Dropdown.Trigger>
+              <Dropdown.Popover className="w-[280px]">
+                <Dropdown.Menu>
+                  {["Member", "Admin"].map((r) => (
+                    <Dropdown.Item key={r} id={r} textValue={r} className="cursor-pointer">
+                      <Label>{r}</Label>
+                    </Dropdown.Item>
+                  ))}
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setIsInviteOpen(false)}
