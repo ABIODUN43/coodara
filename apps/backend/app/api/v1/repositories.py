@@ -65,6 +65,10 @@ def _create_repository_service(
     github_client: GitHubClient,
     github_access_token: str | None = None,
 ) -> RepositoryService:
+    """
+    Create the repository application service.
+    """
+
     return RepositoryService(
         db=db,
         github_client=github_client,
@@ -149,13 +153,17 @@ async def list_repositories(
         int,
         Query(ge=1, le=100),
     ] = 20,
+    github_client: GitHubClient = Depends(get_github_client),
     db: AsyncSession = Depends(get_db),
 ) -> RepositoryListResponse:
     """
     List repositories belonging to an organization.
     """
 
-    service = _create_repository_service(db)
+    service = _create_repository_service(
+        db=db,
+        github_client=github_client,
+    )
 
     repositories, total = await service.list_repositories(
         organization_id=organization_id,
@@ -188,13 +196,17 @@ async def get_repository(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
+    github_client: GitHubClient = Depends(get_github_client),
     db: AsyncSession = Depends(get_db),
 ) -> RepositoryResponse:
     """
     Retrieve a repository belonging to an organization.
     """
 
-    service = _create_repository_service(db)
+    service = _create_repository_service(
+        db=db,
+        github_client=github_client,
+    )
 
     try:
         return await service.get_repository(
@@ -251,15 +263,21 @@ async def update_repository(
             detail="Repository not found.",
         ) from exc
 
-    except InvalidRepositoryBranchError as exc:
+    except GitHubRepositoryNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
 
     except GitHubRepositoryAccessError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    except InvalidRepositoryBranchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -278,15 +296,17 @@ async def delete_repository(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
+    github_client: GitHubClient = Depends(get_github_client),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """
-    Delete a repository from Coodara.
-
-    This does not delete anything from GitHub.
+    Remove a repository from an organization.
     """
 
-    service = _create_repository_service(db)
+    service = _create_repository_service(
+        db=db,
+        github_client=github_client,
+    )
 
     try:
         await service.delete_repository(
@@ -294,12 +314,12 @@ async def delete_repository(
             repository_id=repository_id,
         )
 
+        return Response(
+            status_code=status.HTTP_204_NO_CONTENT,
+        )
+
     except RepositoryNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repository not found.",
         ) from exc
-
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-    )
