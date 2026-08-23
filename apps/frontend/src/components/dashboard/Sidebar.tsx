@@ -6,8 +6,6 @@ import {
   LayoutGrid,
   Building2,
   GitBranch,
-  Activity,
-  Network,
   Bot,
   AlertTriangle,
   FileText,

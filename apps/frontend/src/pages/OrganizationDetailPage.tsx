@@ -13,7 +13,7 @@ import { listRepositories } from "@/api/repositories";
 import type { Organization } from "@/types/organization";
 import type { Repository } from "@/types/repository";
 import { useEffect, useState } from "react";
-import { USE_MOCK_ORGANIZATIONS_DATA, USE_MOCK_REPOSITORIES_DATA } from "@/dev/devFlags";
+import { USE_MOCK_ORGANIZATIONS_DATA,} from "@/dev/devFlags";
 import { MOCK_ORGANIZATIONS } from "@/data/mockOrganizations";
 import { getMockRepositoriesForOrg } from "@/data/mockRepositories";
 import { Dropdown, Label } from "@heroui/react";

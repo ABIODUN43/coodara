@@ -5,7 +5,7 @@ import { Dropdown, Label } from "@heroui/react";
 import { listOrganizations, createOrganization } from "@/api/organizations";
 import { listRepositories } from "@/api/repositories";
 import type { Organization } from "@/types/organization";
-import { USE_MOCK_ORGANIZATIONS_DATA, USE_MOCK_REPOSITORIES_DATA } from "@/dev/devFlags";
+import { USE_MOCK_ORGANIZATIONS_DATA, } from "@/dev/devFlags";
 import { MOCK_ORGANIZATIONS } from "@/data/mockOrganizations";
 import { getMockRepositoriesForOrg } from "@/data/mockRepositories";
 import { useDashboardAction } from "@/context/DashboardActionContext";
