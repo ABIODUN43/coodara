@@ -3,7 +3,8 @@ Repository persistence layer.
 
 Responsible only for database operations involving repositories.
 
-Transaction ownership belongs to the service/application layer.
+Transaction ownership belongs to the application/API layer.
+Repository methods never commit or rollback transactions.
 """
 
 from __future__ import annotations
@@ -11,13 +12,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.models.repository import Repository
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class RepositoryRepository:
     """
     Data-access object for repository persistence.
+
+    This class is responsible only for persistence operations.
+    Transaction boundaries are owned by the application layer.
     """
 
     def __init__(
@@ -31,7 +35,10 @@ class RepositoryRepository:
         repository: Repository,
     ) -> Repository:
         """
-        Persist a repository without committing.
+        Persist a repository without committing the transaction.
+
+        The object is flushed and refreshed so that database-generated
+        values are available to the caller.
         """
 
         self.db.add(repository)
@@ -48,9 +55,10 @@ class RepositoryRepository:
         """
         Retrieve a repository by primary key.
 
-        This method should only be used where an unscoped lookup
-        is explicitly appropriate. Organization-owned application
-        operations should prefer organization-scoped methods.
+        This is an intentionally unscoped lookup. Organization-owned
+        application operations should prefer
+        get_by_organization_and_id() to enforce organization scoping
+        at the persistence layer.
         """
 
         statement = select(Repository).where(
@@ -111,7 +119,8 @@ class RepositoryRepository:
         Retrieve repositories belonging to an organization.
 
         Results are deterministically ordered by most recently
-        updated repository first.
+        updated repository first, with repository ID as a
+        deterministic tie-breaker.
         """
 
         statement = (
@@ -140,8 +149,6 @@ class RepositoryRepository:
         Count repositories belonging to an organization.
         """
 
-        from sqlalchemy import func
-
         statement = select(
             func.count(Repository.id),
         ).where(
@@ -157,9 +164,10 @@ class RepositoryRepository:
         repository: Repository,
     ) -> Repository:
         """
-        Flush changes to an existing repository.
+        Flush changes to an existing repository without committing.
 
-        No transaction is committed here.
+        The repository is refreshed so database-generated values,
+        including updated timestamps, are available to the caller.
         """
 
         await self.db.flush()
@@ -172,7 +180,7 @@ class RepositoryRepository:
         repository: Repository,
     ) -> None:
         """
-        Delete a repository without committing.
+        Delete a repository without committing the transaction.
         """
 
         await self.db.delete(repository)
@@ -187,7 +195,10 @@ class RepositoryRepository:
         """
         Delete an organization-owned repository.
 
-        Returns True when a repository was deleted.
+        Returns True when a repository was deleted and False when
+        no matching repository existed.
+
+        The transaction is not committed here.
         """
 
         statement = delete(Repository).where(

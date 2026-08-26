@@ -80,5 +80,13 @@ class Settings(BaseSettings):
 
     GITHUB_TOKEN_ENCRYPTION_KEY: str
 
+    # --------------------------------------------------------
+    # AI / LLM
+    # --------------------------------------------------------
+
+    LLM_PROVIDER: str = "openai"
+    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_API_KEY: str
+
 
 settings = Settings()

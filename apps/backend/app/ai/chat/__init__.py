@@ -1,0 +1,3 @@
+"""
+Coodara AI Chat package.
+"""

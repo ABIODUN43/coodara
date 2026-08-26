@@ -13,8 +13,16 @@ Authorization:
         ↓
     RepositoryService
 
+Responsibilities of this API layer:
+
+- HTTP request/response handling.
+- Dependency injection.
+- Transaction boundaries.
+- Domain exception → HTTP exception translation.
+
 Business logic belongs to RepositoryService.
 Database access belongs to RepositoryRepository.
+GitHub HTTP communication belongs to GitHubClient.
 """
 
 from __future__ import annotations
@@ -54,6 +62,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 router = APIRouter(
     prefix="/organizations/{organization_id}/repositories",
     tags=["Repositories"],
@@ -66,13 +75,63 @@ def _create_repository_service(
     github_access_token: str | None = None,
 ) -> RepositoryService:
     """
-    Create the repository application service.
+    Construct the repository application service.
     """
 
     return RepositoryService(
         db=db,
         github_client=github_client,
         github_access_token=github_access_token,
+    )
+
+
+def _repository_not_found() -> HTTPException:
+    """
+    Create the standard repository-not-found HTTP error.
+    """
+
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Repository not found.",
+    )
+
+
+def _github_repository_not_found(
+    exc: GitHubRepositoryNotFoundError,
+) -> HTTPException:
+    """
+    Translate a GitHub repository lookup failure into HTTP.
+    """
+
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=str(exc),
+    )
+
+
+def _github_access_denied(
+    exc: GitHubRepositoryAccessError,
+) -> HTTPException:
+    """
+    Translate a GitHub authorization failure into HTTP.
+    """
+
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=str(exc),
+    )
+
+
+def _invalid_branch(
+    exc: InvalidRepositoryBranchError,
+) -> HTTPException:
+    """
+    Translate an invalid repository branch into HTTP.
+    """
+
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=str(exc),
     )
 
 
@@ -94,6 +153,13 @@ async def import_repository(
 ) -> RepositoryResponse:
     """
     Import a GitHub repository into an organization.
+
+    Organization membership and GitHub authorization are enforced
+    through dependencies.
+
+    Business logic is delegated to RepositoryService.
+
+    Transaction ownership remains at this API/application boundary.
     """
 
     service = _create_repository_service(
@@ -108,31 +174,36 @@ async def import_repository(
             payload=payload,
         )
 
+        await db.commit()
+
+        return repository
+
     except RepositoryAlreadyExistsError as exc:
+        await db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
     except GitHubRepositoryNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+        await db.rollback()
+
+        raise _github_repository_not_found(exc) from exc
 
     except GitHubRepositoryAccessError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
-        ) from exc
+        await db.rollback()
+
+        raise _github_access_denied(exc) from exc
 
     except InvalidRepositoryBranchError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
+        await db.rollback()
 
-    return repository
+        raise _invalid_branch(exc) from exc
+
+    except Exception:
+        await db.rollback()
+        raise
 
 
 @router.get(
@@ -201,6 +272,9 @@ async def get_repository(
 ) -> RepositoryResponse:
     """
     Retrieve a repository belonging to an organization.
+
+    Organization scoping is enforced by RepositoryService and
+    RepositoryRepository.
     """
 
     service = _create_repository_service(
@@ -215,10 +289,7 @@ async def get_repository(
         )
 
     except RepositoryNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found.",
-        ) from exc
+        raise _repository_not_found() from exc
 
 
 @router.patch(
@@ -242,6 +313,11 @@ async def update_repository(
 ) -> RepositoryResponse:
     """
     Update repository settings.
+
+    Business validation and GitHub branch validation are handled
+    by RepositoryService.
+
+    Transaction ownership remains at this API/application boundary.
     """
 
     service = _create_repository_service(
@@ -251,35 +327,39 @@ async def update_repository(
     )
 
     try:
-        return await service.update_repository(
+        repository = await service.update_repository(
             organization_id=organization_id,
             repository_id=repository_id,
             payload=payload,
         )
 
+        await db.commit()
+
+        return repository
+
     except RepositoryNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found.",
-        ) from exc
+        await db.rollback()
+
+        raise _repository_not_found() from exc
 
     except GitHubRepositoryNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+        await db.rollback()
+
+        raise _github_repository_not_found(exc) from exc
 
     except GitHubRepositoryAccessError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
-        ) from exc
+        await db.rollback()
+
+        raise _github_access_denied(exc) from exc
 
     except InvalidRepositoryBranchError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
+        await db.rollback()
+
+        raise _invalid_branch(exc) from exc
+
+    except Exception:
+        await db.rollback()
+        raise
 
 
 @router.delete(
@@ -301,6 +381,11 @@ async def delete_repository(
 ) -> Response:
     """
     Remove a repository from an organization.
+
+    This removes the Coodara repository record only.
+    It does not delete anything from GitHub.
+
+    Transaction ownership remains at this API/application boundary.
     """
 
     service = _create_repository_service(
@@ -314,12 +399,17 @@ async def delete_repository(
             repository_id=repository_id,
         )
 
+        await db.commit()
+
         return Response(
             status_code=status.HTTP_204_NO_CONTENT,
         )
 
     except RepositoryNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found.",
-        ) from exc
+        await db.rollback()
+
+        raise _repository_not_found() from exc
+
+    except Exception:
+        await db.rollback()
+        raise

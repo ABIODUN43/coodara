@@ -72,6 +72,10 @@ class InvalidRepositoryBranchError(RepositoryServiceError):
 class RepositoryService:
     """
     Application service for repository management.
+
+    Business workflows are coordinated here while persistence,
+    GitHub communication, and transaction management remain in
+    their respective layers.
     """
 
     def __init__(
@@ -93,7 +97,16 @@ class RepositoryService:
         """
         Import an accessible GitHub repository into an organization.
 
-        No commit occurs here.
+        The workflow:
+
+        1. Retrieve repository metadata from GitHub.
+        2. Extract and validate its GitHub ID.
+        3. Prevent duplicate imports within the organization.
+        4. Resolve and validate the default branch.
+        5. Build the Coodara repository entity.
+        6. Persist the entity without committing.
+
+        Transaction ownership remains outside the service.
         """
 
         github_repository = await self._get_github_repository(
@@ -167,20 +180,22 @@ class RepositoryService:
         """
         List repositories belonging to an organization.
 
-        Returns repositories and total count.
+        Returns:
+
+            (
+                repositories,
+                total_count,
+            )
         """
 
         if page < 1:
-            raise ValueError("page must be greater than or equal to 1.")
-
-        if per_page < 1:
             raise ValueError(
-                "per_page must be greater than or equal to 1.",
+                "page must be greater than or equal to 1.",
             )
 
-        if per_page > 100:
+        if not 1 <= per_page <= 100:
             raise ValueError(
-                "per_page must be less than or equal to 100.",
+                "per_page must be between 1 and 100.",
             )
 
         offset = (page - 1) * per_page
@@ -210,6 +225,10 @@ class RepositoryService:
     ) -> Repository:
         """
         Update mutable repository settings.
+
+        Currently supported settings:
+
+        - default_branch
         """
 
         repository = await self.get_repository(
@@ -270,7 +289,8 @@ class RepositoryService:
         repository_name: str,
     ) -> Mapping[str, Any]:
         """
-        Retrieve repository metadata from GitHub.
+        Retrieve repository metadata from GitHub and translate
+        GitHub-specific failures into service-level errors.
         """
 
         try:
@@ -304,7 +324,7 @@ class RepositoryService:
         branch_name: str,
     ) -> None:
         """
-        Validate that a repository branch exists.
+        Validate that a branch exists in a stored repository.
         """
 
         if not branch_name:
@@ -315,6 +335,31 @@ class RepositoryService:
         owner, repository_name = self._split_full_name(
             repository.full_name,
         )
+
+        await self._validate_github_branch(
+            owner=owner,
+            repository_name=repository_name,
+            branch_name=branch_name,
+        )
+
+    async def _validate_github_branch(
+        self,
+        *,
+        owner: str,
+        repository_name: str,
+        branch_name: str,
+    ) -> None:
+        """
+        Validate that a GitHub repository branch exists.
+
+        GitHub-specific exceptions are translated into domain-level
+        repository service exceptions.
+        """
+
+        if not branch_name:
+            raise InvalidRepositoryBranchError(
+                "Repository branch cannot be empty.",
+            )
 
         try:
             await self.github_client.get_branch(
@@ -341,7 +386,12 @@ class RepositoryService:
         requested_branch: str | None,
     ) -> str:
         """
-        Resolve and validate the repository default branch.
+        Resolve the repository default branch.
+
+        If no branch was explicitly requested, the branch returned
+        by GitHub is used.
+
+        If a branch was explicitly requested, it must exist on GitHub.
         """
 
         github_default_branch = github_repository.get(
@@ -376,23 +426,11 @@ class RepositoryService:
             full_name,
         )
 
-        try:
-            await self.github_client.get_branch(
-                access_token=self._require_github_access_token(),
-                owner=owner,
-                repository=repository_name,
-                branch=branch_name,
-            )
-
-        except GitHubNotFoundError as exc:
-            raise InvalidRepositoryBranchError(
-                f"Branch {branch_name!r} does not exist or is not accessible.",
-            ) from exc
-
-        except GitHubAuthenticationError as exc:
-            raise GitHubRepositoryAccessError(
-                "GitHub authorization is invalid or expired.",
-            ) from exc
+        await self._validate_github_branch(
+            owner=owner,
+            repository_name=repository_name,
+            branch_name=branch_name,
+        )
 
         return branch_name
 
@@ -403,7 +441,7 @@ class RepositoryService:
         github_id: int,
     ) -> None:
         """
-        Prevent duplicate repository imports.
+        Prevent duplicate repository imports within an organization.
         """
 
         existing_repository = (
@@ -427,8 +465,13 @@ class RepositoryService:
         default_branch: str,
     ) -> Repository:
         """
-        Map GitHub repository metadata to a Repository entity.
+        Map validated GitHub repository metadata to a
+        Coodara Repository entity.
         """
+
+        github_id = cls._extract_github_id(
+            github_repository,
+        )
 
         visibility_value = github_repository.get(
             "visibility",
@@ -443,40 +486,33 @@ class RepositoryService:
                 "Unsupported GitHub repository visibility.",
             ) from exc
 
-        name = github_repository.get("name")
-        full_name = github_repository.get("full_name")
-        clone_url = github_repository.get("clone_url")
-        html_url = github_repository.get("html_url")
+        name = cls._require_string(
+            github_repository.get("name"),
+            "repository name",
+        )
 
-        if not isinstance(name, str) or not name.strip():
-            raise RepositoryServiceError(
-                "GitHub response contains an invalid repository name.",
-            )
+        full_name = cls._require_string(
+            github_repository.get("full_name"),
+            "repository full_name",
+        )
 
-        if not isinstance(full_name, str) or not full_name.strip():
-            raise RepositoryServiceError(
-                "GitHub response contains an invalid repository full_name.",
-            )
+        clone_url = cls._require_string(
+            github_repository.get("clone_url"),
+            "clone URL",
+        )
 
-        if not isinstance(clone_url, str) or not clone_url.strip():
-            raise RepositoryServiceError(
-                "GitHub response contains an invalid clone URL.",
-            )
-
-        if not isinstance(html_url, str) or not html_url.strip():
-            raise RepositoryServiceError(
-                "GitHub response contains an invalid HTML URL.",
-            )
+        html_url = cls._require_string(
+            github_repository.get("html_url"),
+            "HTML URL",
+        )
 
         cls._split_full_name(full_name)
 
         return Repository(
             organization_id=organization_id,
-            github_id=cls._extract_github_id(
-                github_repository,
-            ),
-            name=name.strip(),
-            full_name=full_name.strip(),
+            github_id=github_id,
+            name=name,
+            full_name=full_name,
             description=cls._optional_string(
                 github_repository.get("description"),
             ),
@@ -485,8 +521,8 @@ class RepositoryService:
             primary_language=cls._optional_string(
                 github_repository.get("language"),
             ),
-            clone_url=clone_url.strip(),
-            html_url=html_url.strip(),
+            clone_url=clone_url,
+            html_url=html_url,
         )
 
     @staticmethod
@@ -512,11 +548,34 @@ class RepositoryService:
         return github_id
 
     @staticmethod
+    def _require_string(
+        value: Any,
+        field_name: str,
+    ) -> str:
+        """
+        Validate and normalize a required string field.
+        """
+
+        if not isinstance(value, str):
+            raise RepositoryServiceError(
+                f"GitHub response contains an invalid {field_name}.",
+            )
+
+        value = value.strip()
+
+        if not value:
+            raise RepositoryServiceError(
+                f"GitHub response contains an invalid {field_name}.",
+            )
+
+        return value
+
+    @staticmethod
     def _optional_string(
         value: Any,
     ) -> str | None:
         """
-        Validate an optional string field.
+        Validate and normalize an optional string field.
         """
 
         if value is None:
@@ -538,7 +597,7 @@ class RepositoryService:
         """
         Split a GitHub full repository name.
 
-        Expected:
+        Expected format:
 
             owner/repository
         """

@@ -12,11 +12,6 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from app.db.base import Base
-
-if TYPE_CHECKING:
-    from app.models.analysis import AnalysisJob
-    from app.models.architecture import ArchitectureSnapshot
-    from app.models.organization import Organization
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -29,6 +24,11 @@ from sqlalchemy import (
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from app.models.analysis import AnalysisJob
+    from app.models.architecture import ArchitectureSnapshot
+    from app.models.organization import Organization
 
 
 class RepositoryVisibility(str, Enum):
@@ -143,14 +143,12 @@ class Repository(Base):
     )
 
     analysis_jobs: Mapped[list[AnalysisJob]] = relationship(
-    "AnalysisJob",
-    back_populates="repository",
-    cascade="all, delete-orphan",
+        "AnalysisJob",
+        back_populates="repository",
+        cascade="all, delete-orphan",
     )
 
-    architecture_snapshots: Mapped[
-        list[ArchitectureSnapshot]
-    ] = relationship(
+    architecture_snapshots: Mapped[list[ArchitectureSnapshot]] = relationship(
         "ArchitectureSnapshot",
         back_populates="repository",
         cascade="all, delete-orphan",
@@ -158,10 +156,10 @@ class Repository(Base):
 
     def __repr__(self) -> str:
         return (
-            f"Repository("
+            "Repository("
             f"id={self.id}, "
             f"organization_id={self.organization_id}, "
             f"github_id={self.github_id}, "
             f"full_name={self.full_name!r}"
-            f")"
+            ")"
         )

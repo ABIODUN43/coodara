@@ -1,9 +1,10 @@
 """
 Organization persistence layer.
 
-Responsible only for organization database operations.
+Responsible only for database operations involving organizations.
 
 Transaction ownership belongs to the service/application layer.
+Repository methods never commit or rollback transactions.
 """
 
 from __future__ import annotations
@@ -18,7 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 class OrganizationRepository:
     """
-    Data-access object for Organization entities.
+    Data-access object for organization persistence.
+
+    This class is responsible only for database operations.
+    Transaction boundaries are owned by the application layer.
     """
 
     def __init__(
@@ -33,6 +37,9 @@ class OrganizationRepository:
     ) -> Organization:
         """
         Persist an organization without committing.
+
+        The organization is flushed and refreshed so that
+        database-generated values are available to the caller.
         """
 
         self.db.add(organization)
@@ -47,7 +54,7 @@ class OrganizationRepository:
         organization_id: int,
     ) -> Organization | None:
         """
-        Retrieve an organization by ID.
+        Retrieve an organization by primary key.
         """
 
         statement = select(Organization).where(
@@ -63,7 +70,7 @@ class OrganizationRepository:
         slug: str,
     ) -> Organization | None:
         """
-        Retrieve an organization by slug.
+        Retrieve an organization by its unique slug.
         """
 
         statement = select(Organization).where(
@@ -80,19 +87,23 @@ class OrganizationRepository:
     ) -> Sequence[Organization]:
         """
         Retrieve organizations where the user is a member.
+
+        Organizations are joined through the organization membership
+        table.
         """
 
         statement = (
             select(Organization)
             .join(
                 OrganizationMember,
-                Organization.id == OrganizationMember.organization_id,
+                OrganizationMember.organization_id == Organization.id,
             )
             .where(
                 OrganizationMember.user_id == user_id,
             )
             .order_by(
-                Organization.created_at.desc(),
+                Organization.created_at.asc(),
+                Organization.id.asc(),
             )
         )
 

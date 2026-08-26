@@ -69,7 +69,7 @@ class GitHubOAuthService:
         params = {
             "client_id": settings.GITHUB_CLIENT_ID,
             "redirect_uri": settings.GITHUB_CALLBACK_URL,
-            "scope": "read:user user:email",
+            "scope": "repo read:user user:email",
             "state": state,
         }
 
