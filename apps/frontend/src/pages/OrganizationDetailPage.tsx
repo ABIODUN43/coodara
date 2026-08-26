@@ -192,7 +192,15 @@ function RepoRow({ repo }: { repo: Repository }) {
             <LayoutGrid className="h-3.5 w-3.5" />
             Open command center
           </button>
-          <button className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)]">
+          <button
+            onClick={() => {
+              if (!orgId) return;
+              navigate(
+                `/dashboard/organizations/${orgId}/repositories`
+              );
+            }}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
+          >
             <Plus className="h-3.5 w-3.5" />
             Import repository
           </button>

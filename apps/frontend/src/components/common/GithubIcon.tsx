@@ -1,7 +1,12 @@
-function GithubIcon({ className }: { className?: string }) {
+interface GithubIconProps {
+  className?: string;
+}
+
+export function GithubIcon({ className }: GithubIconProps) {
   return (
     <svg
       role="img"
+      aria-label="GitHub"
       viewBox="0 0 24 24"
       className={className}
       fill="currentColor"

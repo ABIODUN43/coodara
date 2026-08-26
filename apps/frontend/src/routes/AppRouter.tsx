@@ -43,25 +43,43 @@ export const router = createBrowserRouter([
             index: true,
             element: <DashboardHome />,
           },
+
           {
             path: "organizations",
             element: <OrganizationsPage />,
           },
+
           {
             path: "organizations/:orgId",
             element: <OrganizationDetailPage />,
           },
+
           {
-            path: "repositories",
+            path: "organizations/:orgId/repositories",
             element: <RepositoriesPage />,
           },
+
           {
             path: "organizations/:orgId/repositories/:repoId/analysis",
             element: <AnalysisPage />,
           },
+
           {
             path: "organizations/:orgId/repositories/:repoId/architecture",
             element: <ArchitecturePage />,
+          },
+
+          /*
+           * Keep the global repository route temporarily for
+           * compatibility with existing navigation.
+           *
+           * Organization-scoped repository navigation should use:
+           *
+           * /dashboard/organizations/:orgId/repositories
+           */
+          {
+            path: "repositories",
+            element: <RepositoriesPage />,
           },
         ],
       },
