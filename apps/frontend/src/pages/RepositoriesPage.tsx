@@ -1,22 +1,13 @@
 import { useEffect, useState } from "react";
-import {
-  Link,
-  useNavigate,
-  useParams,
-} from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   Search,
   GitBranch as RepoIcon,
   ChevronRight,
-  Plus,
-  X,
 } from "lucide-react";
 
 import { useProject } from "@/context/ProjectContext";
-import {
-  listRepositories,
-  importRepository,
-} from "@/api/repositories";
+import { listRepositories } from "@/api/repositories";
 
 import type { Repository } from "@/types/repository";
 
@@ -26,7 +17,6 @@ import { getMockRepositoriesForOrg } from "@/data/mockRepositories";
 export function RepositoriesPage() {
   const { activeProject } = useProject();
   const { orgId } = useParams<{ orgId: string }>();
-  const navigate = useNavigate();
 
   /*
    * Organization identity comes from the URL when this page is
@@ -34,8 +24,9 @@ export function RepositoriesPage() {
    *
    * /dashboard/organizations/:orgId/repositories
    *
-   * The active project is kept as a fallback for the legacy
-   * /dashboard/repositories route.
+   * The active project remains as a fallback for the legacy:
+   *
+   * /dashboard/repositories
    */
   const parsedOrganizationId = orgId
     ? Number(orgId)
@@ -55,14 +46,9 @@ export function RepositoriesPage() {
 
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] =
+    useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-
-  const [isImportOpen, setIsImportOpen] = useState(false);
-  const [owner, setOwner] = useState("");
-  const [repoName, setRepoName] = useState("");
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
 
   async function loadRepos() {
     if (!organizationId) {
@@ -100,73 +86,11 @@ export function RepositoriesPage() {
   }
 
   useEffect(() => {
-    loadRepos();
+    void loadRepos();
+
     // loadRepos intentionally uses the current organization ID.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId]);
-
-  async function handleImport() {
-    if (
-      !organizationId ||
-      !owner.trim() ||
-      !repoName.trim()
-    ) {
-      return;
-    }
-
-    if (USE_MOCK_REPOSITORIES_DATA) {
-      setImportError(
-        "Importing repositories is disabled while running on demo data.",
-      );
-      return;
-    }
-
-    setImporting(true);
-    setImportError(null);
-
-    try {
-      const created = await importRepository(
-        organizationId,
-        {
-          owner: owner.trim(),
-          name: repoName.trim(),
-        },
-      );
-
-      setIsImportOpen(false);
-      setOwner("");
-      setRepoName("");
-
-      await loadRepos();
-
-      navigate(
-        `/dashboard/organizations/${organizationId}/repositories/${created.id}/analysis`,
-      );
-    } catch (err: any) {
-      const status = err?.response?.status;
-
-      if (status === 409) {
-        setImportError(
-          "This repository is already imported.",
-        );
-      } else if (status === 404) {
-        setImportError(
-          "GitHub repository not found.",
-        );
-      } else if (status === 403) {
-        setImportError(
-          "GitHub repository access denied.",
-        );
-      } else {
-        setImportError(
-          err?.response?.data?.detail ??
-            "Failed to import repository.",
-        );
-      }
-    } finally {
-      setImporting(false);
-    }
-  }
 
   const filteredRepositories = repos.filter(
     (repository) => {
@@ -234,18 +158,6 @@ export function RepositoriesPage() {
         <h1 className="text-[18px] font-semibold tracking-tight text-[var(--cd-ink)]">
           Repositories
         </h1>
-
-        <button
-          type="button"
-          onClick={() => {
-            setImportError(null);
-            setIsImportOpen(true);
-          }}
-          className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Import repository
-        </button>
       </div>
 
       {/* Repository list */}
@@ -296,17 +208,10 @@ export function RepositoriesPage() {
                 No repositories connected yet.
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setImportError(null);
-                  setIsImportOpen(true);
-                }}
-                className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-2 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Import Repository
-              </button>
+              <div className="text-[12px] text-[var(--cd-ink-faint)]">
+                Use the Import repository action in the
+                dashboard navbar to connect a GitHub repository.
+              </div>
             </div>
           )}
 
@@ -376,129 +281,6 @@ export function RepositoriesPage() {
             ),
           )}
       </div>
-
-      {/* Import repository modal */}
-      {isImportOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4"
-          onClick={() => {
-            if (!importing) {
-              setIsImportOpen(false);
-            }
-          }}
-        >
-          <div
-            className="w-full max-w-[400px] rounded-[14px] border border-[var(--cd-border)] bg-[var(--cd-surface)] p-[22px] shadow-[0_16px_40px_rgba(20,20,30,0.16)]"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
-            {/* Modal header */}
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-[15px] font-semibold text-[var(--cd-ink)]">
-                Import GitHub repository
-              </h2>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (!importing) {
-                    setIsImportOpen(false);
-                  }
-                }}
-                disabled={importing}
-                aria-label="Close"
-                className="cursor-pointer text-[var(--cd-ink-faint)] hover:text-[var(--cd-ink)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Import error */}
-            {importError && (
-              <div className="mb-3 rounded-lg bg-[var(--cd-risk-bg)] px-3 py-2 text-[12px] text-[var(--cd-risk)]">
-                {importError}
-              </div>
-            )}
-
-            {/* Owner */}
-            <div className="mb-3 flex flex-col gap-1.5">
-              <span className="text-[12px] font-medium text-[var(--cd-ink-soft)]">
-                Owner
-              </span>
-
-              <input
-                type="text"
-                autoFocus
-                value={owner}
-                onChange={(event) =>
-                  setOwner(event.target.value)
-                }
-                disabled={importing}
-                placeholder="e.g. octocat"
-                className="rounded-lg border border-[var(--cd-border)] bg-[var(--cd-sunken)] px-[11px] py-[9px] text-[13px] text-[var(--cd-ink)] outline-none focus:border-[var(--cd-accent)] focus:bg-[var(--cd-surface)] disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </div>
-
-            {/* Repository name */}
-            <div className="mb-3 flex flex-col gap-1.5">
-              <span className="text-[12px] font-medium text-[var(--cd-ink-soft)]">
-                Repository name
-              </span>
-
-              <input
-                type="text"
-                value={repoName}
-                onChange={(event) =>
-                  setRepoName(event.target.value)
-                }
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !importing
-                  ) {
-                    void handleImport();
-                  }
-                }}
-                disabled={importing}
-                placeholder="e.g. hello-world"
-                className="rounded-lg border border-[var(--cd-border)] bg-[var(--cd-sunken)] px-[11px] py-[9px] text-[13px] text-[var(--cd-ink)] outline-none focus:border-[var(--cd-accent)] focus:bg-[var(--cd-surface)] disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </div>
-
-            {/* Modal actions */}
-            <div className="mt-[18px] flex justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!importing) {
-                    setIsImportOpen(false);
-                  }
-                }}
-                disabled={importing}
-                className="cursor-pointer rounded-lg px-3.5 py-2 text-[12.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleImport()}
-                disabled={
-                  importing ||
-                  !owner.trim() ||
-                  !repoName.trim()
-                }
-                className="cursor-pointer rounded-lg bg-[var(--cd-accent)] px-3.5 py-2 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)] disabled:cursor-not-allowed disabled:opacity-55"
-              >
-                {importing
-                  ? "Importing..."
-                  : "Import repository"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

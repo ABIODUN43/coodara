@@ -5,11 +5,12 @@ Responsible only for database operations involving repositories.
 
 Transaction ownership belongs to the application/API layer.
 Repository methods never commit or rollback transactions.
+
+Organization-owned repository operations are scoped by organization_id
+to prevent accidental cross-organization data access.
 """
 
 from __future__ import annotations
-
-from collections.abc import Sequence
 
 from app.models.repository import Repository
 from sqlalchemy import delete, func, select
@@ -20,8 +21,20 @@ class RepositoryRepository:
     """
     Data-access object for repository persistence.
 
-    This class is responsible only for persistence operations.
-    Transaction boundaries are owned by the application layer.
+    Responsibilities:
+        - Create repositories.
+        - Retrieve repositories.
+        - List repositories.
+        - Count repositories.
+        - Update repositories.
+        - Delete repositories.
+
+    This class does not:
+        - Commit transactions.
+        - Roll back transactions.
+        - Perform authorization.
+        - Communicate with GitHub.
+        - Contain application/business logic.
     """
 
     def __init__(
@@ -37,8 +50,8 @@ class RepositoryRepository:
         """
         Persist a repository without committing the transaction.
 
-        The object is flushed and refreshed so that database-generated
-        values are available to the caller.
+        Flush and refresh make database-generated values available
+        to the caller before the surrounding transaction commits.
         """
 
         self.db.add(repository)
@@ -53,12 +66,14 @@ class RepositoryRepository:
         repository_id: int,
     ) -> Repository | None:
         """
-        Retrieve a repository by primary key.
+        Retrieve a repository by its primary key.
 
-        This is an intentionally unscoped lookup. Organization-owned
-        application operations should prefer
-        get_by_organization_and_id() to enforce organization scoping
-        at the persistence layer.
+        This method is intentionally unscoped and should only be used
+        where organization ownership has already been established by
+        the calling layer.
+
+        Organization-owned application operations should prefer
+        get_by_organization_and_id().
         """
 
         statement = select(Repository).where(
@@ -77,6 +92,8 @@ class RepositoryRepository:
     ) -> Repository | None:
         """
         Retrieve a repository belonging to an organization.
+
+        Organization scoping is enforced directly in the query.
         """
 
         statement = select(Repository).where(
@@ -114,14 +131,27 @@ class RepositoryRepository:
         organization_id: int,
         offset: int = 0,
         limit: int = 20,
-    ) -> Sequence[Repository]:
+    ) -> list[Repository]:
         """
         Retrieve repositories belonging to an organization.
 
         Results are deterministically ordered by most recently
         updated repository first, with repository ID as a
         deterministic tie-breaker.
+
+        Raises:
+            ValueError: If offset is negative or limit is less than 1.
         """
+
+        if offset < 0:
+            raise ValueError(
+                "offset must be greater than or equal to 0.",
+            )
+
+        if limit < 1:
+            raise ValueError(
+                "limit must be greater than 0.",
+            )
 
         statement = (
             select(Repository)
@@ -138,7 +168,7 @@ class RepositoryRepository:
 
         result = await self.db.execute(statement)
 
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def count_by_organization(
         self,
@@ -166,8 +196,8 @@ class RepositoryRepository:
         """
         Flush changes to an existing repository without committing.
 
-        The repository is refreshed so database-generated values,
-        including updated timestamps, are available to the caller.
+        Refresh the entity so database-generated values, including
+        updated timestamps, are available to the caller.
         """
 
         await self.db.flush()
@@ -195,8 +225,11 @@ class RepositoryRepository:
         """
         Delete an organization-owned repository.
 
-        Returns True when a repository was deleted and False when
-        no matching repository existed.
+        Organization scoping is enforced directly in the DELETE query.
+
+        Returns:
+            True if a repository was deleted.
+            False if no matching repository existed.
 
         The transaction is not committed here.
         """

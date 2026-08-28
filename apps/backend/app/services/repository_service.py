@@ -23,6 +23,8 @@ This service does not own:
 - Git cloning.
 - Repository analysis.
 - Background jobs.
+
+Transaction boundaries are owned by the application/API layer.
 """
 
 from __future__ import annotations
@@ -80,6 +82,7 @@ class RepositoryService:
 
     def __init__(
         self,
+        *,
         db: AsyncSession,
         github_client: GitHubClient,
         github_access_token: str | None = None,
@@ -97,10 +100,10 @@ class RepositoryService:
         """
         Import an accessible GitHub repository into an organization.
 
-        The workflow:
+        Workflow:
 
         1. Retrieve repository metadata from GitHub.
-        2. Extract and validate its GitHub ID.
+        2. Validate the GitHub repository ID.
         3. Prevent duplicate imports within the organization.
         4. Resolve and validate the default branch.
         5. Build the Coodara repository entity.
@@ -138,8 +141,13 @@ class RepositoryService:
             await self.repository_repository.create(repository)
 
         except IntegrityError as exc:
-            raise RepositoryAlreadyExistsError(
-                "Repository is already imported into this organization.",
+            if self._is_repository_unique_constraint_violation(exc):
+                raise RepositoryAlreadyExistsError(
+                    "Repository is already imported into this organization.",
+                ) from exc
+
+            raise RepositoryServiceError(
+                "Repository could not be persisted.",
             ) from exc
 
         return repository
@@ -267,7 +275,9 @@ class RepositoryService:
             repository_id=repository_id,
         )
 
-        await self.repository_repository.delete(repository)
+        await self.repository_repository.delete(
+            repository,
+        )
 
     def _require_github_access_token(self) -> str:
         """
@@ -289,8 +299,10 @@ class RepositoryService:
         repository_name: str,
     ) -> Mapping[str, Any]:
         """
-        Retrieve repository metadata from GitHub and translate
-        GitHub-specific failures into service-level errors.
+        Retrieve repository metadata from GitHub.
+
+        GitHub-specific failures are translated into
+        repository service exceptions.
         """
 
         try:
@@ -352,8 +364,8 @@ class RepositoryService:
         """
         Validate that a GitHub repository branch exists.
 
-        GitHub-specific exceptions are translated into domain-level
-        repository service exceptions.
+        GitHub-specific exceptions are translated into
+        domain-level repository service exceptions.
         """
 
         if not branch_name:
@@ -420,7 +432,9 @@ class RepositoryService:
                 "Repository branch cannot be empty.",
             )
 
-        full_name = github_repository.get("full_name")
+        full_name = github_repository.get(
+            "full_name",
+        )
 
         owner, repository_name = self._split_full_name(
             full_name,
@@ -442,6 +456,9 @@ class RepositoryService:
     ) -> None:
         """
         Prevent duplicate repository imports within an organization.
+
+        The database unique constraint remains the final protection
+        against concurrent duplicate imports.
         """
 
         existing_repository = (
@@ -506,7 +523,9 @@ class RepositoryService:
             "HTML URL",
         )
 
-        cls._split_full_name(full_name)
+        cls._split_full_name(
+            full_name,
+        )
 
         return Repository(
             organization_id=organization_id,
@@ -533,7 +552,9 @@ class RepositoryService:
         Extract a valid GitHub repository ID.
         """
 
-        github_id = github_repository.get("id")
+        github_id = github_repository.get(
+            "id",
+        )
 
         if isinstance(github_id, bool):
             raise RepositoryServiceError(
@@ -621,18 +642,26 @@ class RepositoryService:
 
         return owner, repository
 
+    @staticmethod
+    def _is_repository_unique_constraint_violation(
+        exc: IntegrityError,
+    ) -> bool:
+        """
+        Determine whether an IntegrityError was caused by the
+        repository organization/GitHub uniqueness constraint.
 
-def create_repository_service(
-    db: AsyncSession,
-    github_client: GitHubClient,
-    github_access_token: str | None = None,
-) -> RepositoryService:
-    """
-    Construct RepositoryService with explicit dependencies.
-    """
+        The database remains the authoritative protection against
+        concurrent duplicate imports.
+        """
 
-    return RepositoryService(
-        db=db,
-        github_client=github_client,
-        github_access_token=github_access_token,
-    )
+        constraint_name = "uq_repository_organization_github"
+
+        message = str(exc.orig).lower()
+
+        return (
+            constraint_name.lower() in message
+            or (
+                "organization_id" in message
+                and "github_id" in message
+            )
+        )

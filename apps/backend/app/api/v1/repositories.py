@@ -3,13 +3,13 @@ Repository API endpoints.
 
 All repository endpoints are organization-scoped.
 
-Authorization:
+Authorization flow:
 
     authenticated user
         ↓
     organization membership
         ↓
-    GitHub credential when GitHub access is required
+    GitHub credential when required
         ↓
     RepositoryService
 
@@ -62,7 +62,6 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 router = APIRouter(
     prefix="/organizations/{organization_id}/repositories",
     tags=["Repositories"],
@@ -70,12 +69,16 @@ router = APIRouter(
 
 
 def _create_repository_service(
+    *,
     db: AsyncSession,
     github_client: GitHubClient,
     github_access_token: str | None = None,
 ) -> RepositoryService:
     """
     Construct the repository application service.
+
+    Dependency construction remains in the API layer while the
+    service itself remains independent of FastAPI.
     """
 
     return RepositoryService(
@@ -87,7 +90,7 @@ def _create_repository_service(
 
 def _repository_not_found() -> HTTPException:
     """
-    Create the standard repository-not-found HTTP error.
+    Return the standard repository-not-found HTTP response.
     """
 
     return HTTPException(
@@ -135,6 +138,18 @@ def _invalid_branch(
     )
 
 
+async def _rollback(
+    db: AsyncSession,
+) -> None:
+    """
+    Roll back the current database transaction.
+
+    This helper keeps exception paths consistent across endpoints.
+    """
+
+    await db.rollback()
+
+
 @router.post(
     "",
     response_model=RepositoryResponse,
@@ -148,18 +163,22 @@ async def import_repository(
     payload: RepositoryImportRequest,
     member: OrganizationMemberDependency,
     github_access_token: GitHubAccessTokenDependency,
-    github_client: GitHubClient = Depends(get_github_client),
-    db: AsyncSession = Depends(get_db),
+    github_client: Annotated[
+        GitHubClient,
+        Depends(get_github_client),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
 ) -> RepositoryResponse:
     """
-    Import a GitHub repository into an organization.
+    Import an accessible GitHub repository into an organization.
 
     Organization membership and GitHub authorization are enforced
     through dependencies.
 
-    Business logic is delegated to RepositoryService.
-
-    Transaction ownership remains at this API/application boundary.
+    Repository business rules are delegated to RepositoryService.
     """
 
     service = _create_repository_service(
@@ -179,7 +198,7 @@ async def import_repository(
         return repository
 
     except RepositoryAlreadyExistsError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -187,22 +206,22 @@ async def import_repository(
         ) from exc
 
     except GitHubRepositoryNotFoundError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _github_repository_not_found(exc) from exc
 
     except GitHubRepositoryAccessError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _github_access_denied(exc) from exc
 
     except InvalidRepositoryBranchError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _invalid_branch(exc) from exc
 
     except Exception:
-        await db.rollback()
+        await _rollback(db)
         raise
 
 
@@ -216,6 +235,14 @@ async def list_repositories(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
+    github_client: Annotated[
+        GitHubClient,
+        Depends(get_github_client),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
     page: Annotated[
         int,
         Query(ge=1),
@@ -224,11 +251,13 @@ async def list_repositories(
         int,
         Query(ge=1, le=100),
     ] = 20,
-    github_client: GitHubClient = Depends(get_github_client),
-    db: AsyncSession = Depends(get_db),
 ) -> RepositoryListResponse:
     """
     List repositories belonging to an organization.
+
+    Organization membership is enforced by the dependency layer.
+    Repository filtering is enforced by RepositoryService and
+    RepositoryRepository.
     """
 
     service = _create_repository_service(
@@ -267,8 +296,14 @@ async def get_repository(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
-    github_client: GitHubClient = Depends(get_github_client),
-    db: AsyncSession = Depends(get_db),
+    github_client: Annotated[
+        GitHubClient,
+        Depends(get_github_client),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
 ) -> RepositoryResponse:
     """
     Retrieve a repository belonging to an organization.
@@ -308,16 +343,22 @@ async def update_repository(
     payload: RepositoryUpdateRequest,
     member: OrganizationMemberDependency,
     github_access_token: GitHubAccessTokenDependency,
-    github_client: GitHubClient = Depends(get_github_client),
-    db: AsyncSession = Depends(get_db),
+    github_client: Annotated[
+        GitHubClient,
+        Depends(get_github_client),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
 ) -> RepositoryResponse:
     """
     Update repository settings.
 
-    Business validation and GitHub branch validation are handled
-    by RepositoryService.
+    RepositoryService owns business validation, including GitHub
+    branch validation.
 
-    Transaction ownership remains at this API/application boundary.
+    Transaction ownership remains at the API/application boundary.
     """
 
     service = _create_repository_service(
@@ -338,27 +379,27 @@ async def update_repository(
         return repository
 
     except RepositoryNotFoundError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _repository_not_found() from exc
 
     except GitHubRepositoryNotFoundError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _github_repository_not_found(exc) from exc
 
     except GitHubRepositoryAccessError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _github_access_denied(exc) from exc
 
     except InvalidRepositoryBranchError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _invalid_branch(exc) from exc
 
     except Exception:
-        await db.rollback()
+        await _rollback(db)
         raise
 
 
@@ -376,16 +417,22 @@ async def delete_repository(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
-    github_client: GitHubClient = Depends(get_github_client),
-    db: AsyncSession = Depends(get_db),
+    github_client: Annotated[
+        GitHubClient,
+        Depends(get_github_client),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
 ) -> Response:
     """
     Remove a repository from an organization.
 
-    This removes the Coodara repository record only.
+    This deletes only the Coodara repository record.
     It does not delete anything from GitHub.
 
-    Transaction ownership remains at this API/application boundary.
+    Transaction ownership remains at the API/application boundary.
     """
 
     service = _create_repository_service(
@@ -406,10 +453,10 @@ async def delete_repository(
         )
 
     except RepositoryNotFoundError as exc:
-        await db.rollback()
+        await _rollback(db)
 
         raise _repository_not_found() from exc
 
     except Exception:
-        await db.rollback()
+        await _rollback(db)
         raise

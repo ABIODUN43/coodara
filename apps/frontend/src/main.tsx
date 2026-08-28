@@ -2,12 +2,15 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 
 import "./index.css";
+import "./api/interceptors";
 
 import { AppProvider } from "./providers/AppProvider";
 import { router } from "./routes/AppRouter";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+ReactDOM.createRoot(
+  document.getElementById("root")!,
+).render(
   <AppProvider>
     <RouterProvider router={router} />
-  </AppProvider>
+  </AppProvider>,
 );

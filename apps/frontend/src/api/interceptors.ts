@@ -1,7 +1,12 @@
-import type { AxiosError, InternalAxiosRequestConfig } from "axios";
+import type {
+  AxiosError,
+  InternalAxiosRequestConfig,
+} from "axios";
+
 import { api } from "./client";
 
-interface RetryableRequestConfig extends InternalAxiosRequestConfig {
+interface RetryableRequestConfig
+  extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
@@ -17,12 +22,19 @@ function processRefreshQueue(error?: unknown): void {
 
   refreshQueue = [];
 
-  if (error) {
-    queue.forEach(({ reject }) => reject(error));
-    return;
+  for (const { resolve, reject } of queue) {
+    if (error) {
+      reject(error);
+    } else {
+      resolve();
+    }
   }
+}
 
-  queue.forEach(({ resolve }) => resolve());
+function isRefreshRequest(
+  request: RetryableRequestConfig,
+): boolean {
+  return request.url?.endsWith("/auth/refresh") ?? false;
 }
 
 api.interceptors.response.use(
@@ -44,20 +56,7 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    /*
-     * Never intercept the refresh endpoint itself.
-     *
-     * Otherwise:
-     *
-     * /auth/refresh
-     *      ↓
-     * 401
-     *      ↓
-     * /auth/refresh
-     *      ↓
-     * infinite loop
-     */
-    if (originalRequest.url?.includes("/auth/refresh")) {
+    if (isRefreshRequest(originalRequest)) {
       return Promise.reject(error);
     }
 
@@ -77,10 +76,6 @@ api.interceptors.response.use(
     isRefreshing = true;
 
     try {
-      /*
-       * The browser automatically sends the HttpOnly
-       * refresh cookie.
-       */
       await api.post("/auth/refresh");
 
       processRefreshQueue();

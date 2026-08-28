@@ -28,3 +28,7 @@ export interface RepositoryImportRequest {
   name: string;
   default_branch?: string | null;
 }
+
+export interface RepositoryUpdateRequest {
+  default_branch?: string | null;
+}

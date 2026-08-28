@@ -7,7 +7,7 @@ import { LandingPage } from "@/pages/LandingPage";
 import { LoginPage } from "@/pages/LoginPage";
 import AuthCallbackPage from "@/features/auth/pages/AuthCallbackPage";
 
-import { DashboardLayout } from "@/pages/DashboardLayout";
+import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { DashboardHome } from "@/pages/DashboardHome";
 import { OrganizationsPage } from "@/pages/OrganizationsPage";
 import { OrganizationDetailPage } from "@/pages/OrganizationDetailPage";
@@ -70,11 +70,9 @@ export const router = createBrowserRouter([
           },
 
           /*
-           * Keep the global repository route temporarily for
-           * compatibility with existing navigation.
+           * Legacy compatibility route.
            *
            * Organization-scoped repository navigation should use:
-           *
            * /dashboard/organizations/:orgId/repositories
            */
           {

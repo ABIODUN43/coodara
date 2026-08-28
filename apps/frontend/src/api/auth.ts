@@ -1,17 +1,9 @@
 import { api } from "./client";
 
-export interface GithubUser {
-  id: number;
-  github_id: number;
-  username: string;
-  email: string | null;
-  avatar_url: string;
-}
-
-export interface RefreshResponse {
-  access_token: string;
-  token_type: string;
-}
+import type {
+  GithubUser,
+  RefreshResponse,
+} from "@/types/auth";
 
 /**
  * Start GitHub OAuth authentication.
@@ -26,7 +18,7 @@ export function loginWithGithub(): void {
  * Retrieve the currently authenticated user.
  *
  * Authentication is provided automatically through
- * the HttpOnly authentication cookies.
+ * HttpOnly authentication cookies.
  */
 export async function getCurrentUser(): Promise<GithubUser> {
   const { data } = await api.get<{ user: GithubUser }>("/auth/me");
@@ -37,10 +29,8 @@ export async function getCurrentUser(): Promise<GithubUser> {
 /**
  * Rotate the current refresh session.
  *
- * The refresh token is stored in an HttpOnly cookie,
- * therefore no token is passed from JavaScript.
- *
- * The backend will issue new authentication cookies.
+ * The refresh token is stored in an HttpOnly cookie.
+ * JavaScript never receives or sends the refresh token.
  */
 export async function refreshAccessToken(): Promise<RefreshResponse> {
   const { data } = await api.post<RefreshResponse>("/auth/refresh");

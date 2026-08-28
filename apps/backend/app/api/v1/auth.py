@@ -59,6 +59,10 @@ ACCESS_TOKEN_COOKIE = "coodara_access_token"
 REFRESH_TOKEN_COOKIE = "coodara_refresh_token"
 OAUTH_STATE_COOKIE = "coodara_github_oauth_state"
 
+AUTH_COOKIE_PATH = "/"
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+OAUTH_STATE_COOKIE_PATH = "/api/v1/auth"
+
 
 def _is_secure_cookie() -> bool:
     """
@@ -87,7 +91,7 @@ def _set_auth_cookies(
         secure=secure,
         samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
+        path=AUTH_COOKIE_PATH,
     )
 
     response.set_cookie(
@@ -96,8 +100,8 @@ def _set_auth_cookies(
         httponly=True,
         secure=secure,
         samesite="lax",
-        max_age=(settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60),
-        path="/api/v1/auth",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path=REFRESH_COOKIE_PATH,
     )
 
 
@@ -118,7 +122,7 @@ def _set_oauth_state_cookie(
         secure=_is_secure_cookie(),
         samesite="lax",
         max_age=600,
-        path="/api/v1/auth",
+        path=OAUTH_STATE_COOKIE_PATH,
     )
 
 
@@ -127,21 +131,24 @@ def _clear_auth_cookies(
 ) -> None:
     """
     Remove authentication and OAuth-state cookies.
+
+    Cookie paths must match the paths used when
+    the cookies were originally created.
     """
 
     response.delete_cookie(
         key=ACCESS_TOKEN_COOKIE,
-        path="/",
+        path=AUTH_COOKIE_PATH,
     )
 
     response.delete_cookie(
         key=REFRESH_TOKEN_COOKIE,
-        path="/auth/v1/auth",
+        path=REFRESH_COOKIE_PATH,
     )
 
     response.delete_cookie(
         key=OAUTH_STATE_COOKIE,
-        path="/api/v1/auth",
+        path=OAUTH_STATE_COOKIE_PATH,
     )
 
 
@@ -153,8 +160,10 @@ async def github_login() -> RedirectResponse:
 
     state = await github_oauth_state_service.create_state()
 
-    authorization_url = await github_oauth_service.get_authorization_url(
-        state=state,
+    authorization_url = (
+        await github_oauth_service.get_authorization_url(
+            state=state,
+        )
     )
 
     response = RedirectResponse(
@@ -172,14 +181,8 @@ async def github_login() -> RedirectResponse:
 
 @router.get("/callback")
 async def github_callback(
-    code: str = Query(
-        ...,
-        min_length=1,
-    ),
-    state: str = Query(
-        ...,
-        min_length=1,
-    ),
+    code: str = Query(..., min_length=1),
+    state: str = Query(..., min_length=1),
     request: Request = None,
     db: Annotated[
         AsyncSession,
@@ -200,7 +203,6 @@ async def github_callback(
     cookie_state = request.cookies.get(
         OAUTH_STATE_COOKIE,
     )
-    
 
     if not cookie_state or cookie_state != state:
         raise HTTPException(
@@ -217,12 +219,16 @@ async def github_callback(
         )
 
     try:
-        github_access_token = await github_oauth_service.exchange_code_for_token(
-            code,
+        github_access_token = (
+            await github_oauth_service.exchange_code_for_token(
+                code,
+            )
         )
 
-        github_user = await github_oauth_service.get_github_user(
-            github_access_token,
+        github_user = (
+            await github_oauth_service.get_github_user(
+                github_access_token,
+            )
         )
 
         user = await auth_service.authenticate_github_user(
@@ -262,7 +268,7 @@ async def github_callback(
 
     response.delete_cookie(
         key=OAUTH_STATE_COOKIE,
-        path="/api/v1/auth",
+        path=OAUTH_STATE_COOKIE_PATH,
     )
 
     return response
@@ -281,7 +287,7 @@ async def refresh_token(
     ],
 ) -> RefreshResponse:
     """
-    Rotate the Coodara refresh session.
+    Rotate the current Coodara refresh session.
     """
 
     refresh_token_value = request.cookies.get(

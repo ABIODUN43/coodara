@@ -9,13 +9,14 @@ import {
   getCurrentUser,
   loginWithGithub,
   logout as logoutRequest,
-  type GithubUser,
-} from "../api/auth";
+} from "@/api/auth";
+
+import type { GithubUser } from "@/types/auth";
 
 import {
   AuthContext,
   type AuthContextValue,
-} from "../context/AuthContext";
+} from "@/context/AuthContext";
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -24,42 +25,25 @@ interface AuthProviderProps {
 export function AuthProvider({
   children,
 }: AuthProviderProps) {
-  const [user, setUser] =
-    useState<GithubUser | null>(null);
-
+  const [user, setUser] = useState<GithubUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /**
-   * Ask the backend who the current user is.
-   *
-   * The browser automatically sends the HttpOnly
-   * authentication cookies.
-   */
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (): Promise<void> => {
     const currentUser = await getCurrentUser();
-
     setUser(currentUser);
   }, []);
 
-  /**
-   * Restore authentication when the application starts.
-   */
   useEffect(() => {
     let mounted = true;
 
-    async function restoreAuthentication() {
+    async function restoreAuthentication(): Promise<void> {
       try {
-        const currentUser =
-          await getCurrentUser();
+        const currentUser = await getCurrentUser();
 
         if (mounted) {
           setUser(currentUser);
         }
       } catch {
-        /*
-         * 401 simply means there is no valid
-         * authenticated session.
-         */
         if (mounted) {
           setUser(null);
         }
@@ -70,24 +54,26 @@ export function AuthProvider({
       }
     }
 
-    restoreAuthentication();
+    void restoreAuthentication();
 
     return () => {
       mounted = false;
     };
   }, []);
 
-  async function login(): Promise<void> {
+  const login = useCallback((): Promise<void> => {
     loginWithGithub();
-  }
 
-  async function logout(): Promise<void> {
+    return Promise.resolve();
+  }, []);
+
+  const logout = useCallback(async (): Promise<void> => {
     try {
       await logoutRequest();
     } finally {
       setUser(null);
     }
-  }
+  }, []);
 
   const value: AuthContextValue = {
     user,

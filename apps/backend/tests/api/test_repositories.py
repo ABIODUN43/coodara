@@ -18,6 +18,7 @@ from app.schemas.repository import (
     RepositoryImportRequest,
     RepositoryUpdateRequest,
 )
+from app.services.github_service import GitHubClient
 from app.services.repository_service import (
     GitHubRepositoryAccessError,
     GitHubRepositoryNotFoundError,
@@ -36,6 +37,7 @@ def make_repository(
     organization_id: int = 10,
 ) -> Repository:
     """Create a repository model for testing."""
+
     return Repository(
         id=repository_id,
         organization_id=organization_id,
@@ -55,16 +57,33 @@ def make_repository(
 
 def make_member() -> MagicMock:
     """Create a mock organization member."""
+
     return MagicMock()
 
 
 def make_db() -> MagicMock:
     """Create a mock database session."""
-    return MagicMock()
+    db = MagicMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
+def make_github_client() -> MagicMock:
+    """
+    Create a mocked GitHub client.
+
+    Endpoint tests do not exercise GitHub communication directly.
+    The client is supplied only because it is part of the endpoint's
+    dependency contract.
+    """
+
+    return MagicMock(spec=GitHubClient)
 
 
 def make_import_payload() -> RepositoryImportRequest:
     """Create a repository import payload."""
+
     return RepositoryImportRequest(
         owner="owner",
         name="example",
@@ -74,6 +93,7 @@ def make_import_payload() -> RepositoryImportRequest:
 
 def make_update_payload() -> RepositoryUpdateRequest:
     """Create a repository update payload."""
+
     return RepositoryUpdateRequest(
         default_branch="develop",
     )
@@ -81,6 +101,7 @@ def make_update_payload() -> RepositoryUpdateRequest:
 
 def make_service() -> MagicMock:
     """Create a mocked repository service."""
+
     return MagicMock()
 
 
@@ -88,6 +109,7 @@ def patch_repository_service(
     service: MagicMock,
 ):
     """Patch repository service creation."""
+
     return patch(
         "app.api.v1.repositories._create_repository_service",
         return_value=service,
@@ -104,6 +126,8 @@ async def test_import_repository_returns_created_repository() -> None:
     )
 
     payload = make_import_payload()
+    db = make_db()
+    github_client = make_github_client()
 
     with patch_repository_service(service):
         result = await import_repository(
@@ -111,7 +135,8 @@ async def test_import_repository_returns_created_repository() -> None:
             payload=payload,
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=github_client,
+            db=db,
         )
 
     assert result is repository
@@ -120,6 +145,8 @@ async def test_import_repository_returns_created_repository() -> None:
         organization_id=10,
         payload=payload,
     )
+
+    db.commit.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -131,6 +158,8 @@ async def test_import_repository_maps_duplicate_to_409() -> None:
         ),
     )
 
+    db = make_db()
+
     with (
         patch_repository_service(service),
         pytest.raises(HTTPException) as exc_info,
@@ -140,11 +169,14 @@ async def test_import_repository_maps_duplicate_to_409() -> None:
             payload=make_import_payload(),
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "Repository already exists."
+
+    db.rollback.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -156,6 +188,8 @@ async def test_import_repository_maps_github_not_found_to_404() -> None:
         ),
     )
 
+    db = make_db()
+
     with (
         patch_repository_service(service),
         pytest.raises(HTTPException) as exc_info,
@@ -165,10 +199,14 @@ async def test_import_repository_maps_github_not_found_to_404() -> None:
             payload=make_import_payload(),
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "GitHub repository was not found."
+
+    db.rollback.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -180,6 +218,8 @@ async def test_import_repository_maps_github_access_error_to_403() -> None:
         ),
     )
 
+    db = make_db()
+
     with (
         patch_repository_service(service),
         pytest.raises(HTTPException) as exc_info,
@@ -189,10 +229,14 @@ async def test_import_repository_maps_github_access_error_to_403() -> None:
             payload=make_import_payload(),
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "GitHub authorization is invalid."
+
+    db.rollback.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -204,6 +248,8 @@ async def test_import_repository_maps_invalid_branch_to_422() -> None:
         ),
     )
 
+    db = make_db()
+
     with (
         patch_repository_service(service),
         pytest.raises(HTTPException) as exc_info,
@@ -213,10 +259,14 @@ async def test_import_repository_maps_invalid_branch_to_422() -> None:
             payload=make_import_payload(),
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "Branch does not exist."
+
+    db.rollback.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -235,6 +285,7 @@ async def test_list_repositories_returns_paginated_response() -> None:
         result = await list_repositories(
             organization_id=10,
             member=make_member(),
+            github_client=make_github_client(),
             page=2,
             per_page=20,
             db=make_db(),
@@ -284,6 +335,7 @@ async def test_list_repositories_returns_zero_pages_for_empty_result() -> None:
         result = await list_repositories(
             organization_id=10,
             member=make_member(),
+            github_client=make_github_client(),
             page=1,
             per_page=20,
             db=make_db(),
@@ -316,6 +368,7 @@ async def test_get_repository_returns_repository() -> None:
             organization_id=10,
             repository_id=1,
             member=make_member(),
+            github_client=make_github_client(),
             db=make_db(),
         )
 
@@ -342,6 +395,7 @@ async def test_get_repository_maps_not_found_to_404() -> None:
             organization_id=10,
             repository_id=999,
             member=make_member(),
+            github_client=make_github_client(),
             db=make_db(),
         )
 
@@ -359,6 +413,8 @@ async def test_update_repository_returns_updated_repository() -> None:
         return_value=repository,
     )
 
+    db = make_db()
+
     with patch_repository_service(service):
         result = await update_repository(
             organization_id=10,
@@ -366,7 +422,8 @@ async def test_update_repository_returns_updated_repository() -> None:
             payload=payload,
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert result is repository
@@ -377,6 +434,8 @@ async def test_update_repository_returns_updated_repository() -> None:
         payload=payload,
     )
 
+    db.commit.assert_called_once_with()
+
 
 @pytest.mark.asyncio
 async def test_update_repository_maps_not_found_to_404() -> None:
@@ -384,6 +443,8 @@ async def test_update_repository_maps_not_found_to_404() -> None:
     service.update_repository = AsyncMock(
         side_effect=RepositoryNotFoundError(),
     )
+
+    db = make_db()
 
     with (
         patch_repository_service(service),
@@ -395,10 +456,14 @@ async def test_update_repository_maps_not_found_to_404() -> None:
             payload=make_update_payload(),
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Repository not found."
+
+    db.rollback.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -410,6 +475,8 @@ async def test_update_repository_maps_invalid_branch_to_422() -> None:
         ),
     )
 
+    db = make_db()
+
     with (
         patch_repository_service(service),
         pytest.raises(HTTPException) as exc_info,
@@ -420,10 +487,14 @@ async def test_update_repository_maps_invalid_branch_to_422() -> None:
             payload=make_update_payload(),
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "Branch does not exist."
+
+    db.rollback.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -435,6 +506,8 @@ async def test_update_repository_maps_github_access_error_to_403() -> None:
         ),
     )
 
+    db = make_db()
+
     with (
         patch_repository_service(service),
         pytest.raises(HTTPException) as exc_info,
@@ -445,10 +518,14 @@ async def test_update_repository_maps_github_access_error_to_403() -> None:
             payload=make_update_payload(),
             member=make_member(),
             github_access_token="github-token",
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "GitHub authorization is invalid."
+
+    db.rollback.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -456,12 +533,15 @@ async def test_delete_repository_returns_204_response() -> None:
     service = make_service()
     service.delete_repository = AsyncMock()
 
+    db = make_db()
+
     with patch_repository_service(service):
         result = await delete_repository(
             organization_id=10,
             repository_id=1,
             member=make_member(),
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert result.status_code == 204
@@ -471,6 +551,8 @@ async def test_delete_repository_returns_204_response() -> None:
         repository_id=1,
     )
 
+    db.commit.assert_called_once_with()
+
 
 @pytest.mark.asyncio
 async def test_delete_repository_maps_not_found_to_404() -> None:
@@ -478,6 +560,8 @@ async def test_delete_repository_maps_not_found_to_404() -> None:
     service.delete_repository = AsyncMock(
         side_effect=RepositoryNotFoundError(),
     )
+
+    db = make_db()
 
     with (
         patch_repository_service(service),
@@ -487,7 +571,11 @@ async def test_delete_repository_maps_not_found_to_404() -> None:
             organization_id=10,
             repository_id=1,
             member=make_member(),
-            db=make_db(),
+            github_client=make_github_client(),
+            db=db,
         )
 
     assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Repository not found."
+
+    db.rollback.assert_called_once_with()
