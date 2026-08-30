@@ -20,9 +20,7 @@ export function DashboardLayout() {
         <div className="flex min-h-screen bg-[var(--cd-bg)] text-[var(--cd-ink)]">
           <Sidebar
             isMobileOpen={isMobileSidebarOpen}
-            onClose={() =>
-              setIsMobileSidebarOpen(false)
-            }
+            onClose={() => setIsMobileSidebarOpen(false)}
           />
 
           <div className="flex min-w-0 flex-1 flex-col">
@@ -36,9 +34,9 @@ export function DashboardLayout() {
               <Outlet />
             </main>
           </div>
-        </div>
 
-        <RepositoryImportModal />
+          <RepositoryImportModal />
+        </div>
       </DashboardActionProvider>
     </ProjectProvider>
   );

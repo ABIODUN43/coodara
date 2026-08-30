@@ -134,3 +134,21 @@ class RepositoryListResponse(BaseModel):
     pages: int = Field(
         ge=0,
     )
+
+class GitHubRepositoryOption(BaseModel):
+    id: int
+    name: str
+    full_name: str
+    description: str | None = None
+    private: bool
+    default_branch: str
+    language: str | None = None
+    html_url: str
+    updated_at: str | None = None
+
+
+class GitHubRepositoryListResponse(BaseModel):
+    items: list[GitHubRepositoryOption]
+    page: int
+    per_page: int
+    has_next_page: bool

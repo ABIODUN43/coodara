@@ -37,6 +37,7 @@ from app.api.dependencies import (
 )
 from app.db.session import get_db
 from app.schemas.repository import (
+    GitHubRepositoryListResponse,
     RepositoryImportRequest,
     RepositoryListResponse,
     RepositoryResponse,
@@ -66,6 +67,11 @@ router = APIRouter(
     prefix="/organizations/{organization_id}/repositories",
     tags=["Repositories"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _create_repository_service(
@@ -148,6 +154,78 @@ async def _rollback(
     """
 
     await db.rollback()
+
+
+# ---------------------------------------------------------------------------
+# GitHub repository picker
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/github-available",
+    response_model=GitHubRepositoryListResponse,
+)
+async def list_github_repositories(
+    organization_id: Annotated[
+        int,
+        Path(gt=0),
+    ],
+    member: OrganizationMemberDependency,
+    github_access_token: GitHubAccessTokenDependency,
+    github_client: Annotated[
+        GitHubClient,
+        Depends(get_github_client),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
+    page: Annotated[
+        int,
+        Query(ge=1),
+    ] = 1,
+    per_page: Annotated[
+        int,
+        Query(ge=1, le=100),
+    ] = 50,
+) -> GitHubRepositoryListResponse:
+    """
+    List repositories accessible to the authenticated GitHub user.
+
+    This endpoint is used by the repository picker.
+
+    It does not import or persist repositories into Coodara.
+
+    The GitHub access token is resolved server-side and is never
+    exposed to the frontend.
+    """
+
+    service = _create_repository_service(
+        db=db,
+        github_client=github_client,
+        github_access_token=github_access_token,
+    )
+
+    try:
+        repositories = await service.list_github_repositories(
+            page=page,
+            per_page=per_page,
+        )
+
+    except GitHubRepositoryAccessError as exc:
+        raise _github_access_denied(exc) from exc
+
+    return GitHubRepositoryListResponse(
+        items=repositories,
+        page=page,
+        per_page=per_page,
+        has_next_page=len(repositories) == per_page,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Repository CRUD
+# ---------------------------------------------------------------------------
 
 
 @router.post(

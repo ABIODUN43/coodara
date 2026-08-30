@@ -6,6 +6,7 @@ Responsible for repository business workflows.
 This service owns:
 
 - GitHub repository import workflow.
+- GitHub repository picker/listing workflow.
 - Organization ownership enforcement.
 - Duplicate detection.
 - GitHub access validation.
@@ -223,6 +224,54 @@ class RepositoryService:
         )
 
         return list(repositories), total
+
+    async def list_github_repositories(
+        self,
+        *,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> list[Mapping[str, Any]]:
+        """
+        List repositories accessible to the authenticated GitHub user.
+
+        This retrieves GitHub repositories only. It does not persist
+        anything into Coodara.
+
+        The authenticated GitHub token is supplied by the API layer.
+        """
+
+        if page < 1:
+            raise ValueError(
+                "page must be greater than or equal to 1.",
+            )
+
+        if not 1 <= per_page <= 100:
+            raise ValueError(
+                "per_page must be between 1 and 100.",
+            )
+
+        try:
+            repositories = await self.github_client.list_repositories(
+                access_token=self._require_github_access_token(),
+                page=page,
+                per_page=per_page,
+            )
+
+        except GitHubAuthenticationError as exc:
+            raise GitHubRepositoryAccessError(
+                "GitHub authorization is invalid or expired.",
+            ) from exc
+
+        if not isinstance(repositories, list):
+            raise RepositoryServiceError(
+                "GitHub returned an invalid repository list.",
+            )
+
+        return [
+            repository
+            for repository in repositories
+            if isinstance(repository, Mapping)
+        ]
 
     async def update_repository(
         self,

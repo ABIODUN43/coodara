@@ -32,3 +32,38 @@ export interface RepositoryImportRequest {
 export interface RepositoryUpdateRequest {
   default_branch?: string | null;
 }
+
+export interface GitHubRepository {
+  id: number;
+  name: string;
+  full_name: string;
+  description: string | null;
+  private: boolean;
+  visibility: string;
+  default_branch: string;
+  language: string | null;
+  html_url: string;
+  owner: {
+    login: string;
+    avatar_url?: string;
+  };
+}
+
+export interface GitHubRepositoryOption {
+  id: number;
+  name: string;
+  full_name: string;
+  description: string | null;
+  private: boolean;
+  default_branch: string;
+  language: string | null;
+  html_url: string;
+  updated_at: string | null;
+}
+
+export interface GitHubRepositoryListResponse {
+  items: GitHubRepositoryOption[];
+  page: number;
+  per_page: number;
+  has_next_page: boolean;
+}

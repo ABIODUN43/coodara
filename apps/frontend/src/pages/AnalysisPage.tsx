@@ -20,7 +20,6 @@ import type { Repository } from "@/types/repository";
 import type { Analysis, AnalysisResult } from "@/types/analysis";
 
 import { USE_MOCK_ANALYSIS_DATA } from "@/dev/devFlags";
-import { getMockRepository } from "@/data/mockRepositories";
 import {
   getMockAnalysesForRepo,
   getMockResult,
@@ -109,6 +108,14 @@ export function AnalysisPage() {
     repoId: string;
   }>();
 
+  /*
+   * React Router params are technically optional.
+   * The page itself validates them before making real API calls,
+   * while the polling hook receives safe strings for TypeScript.
+   */
+  const safeOrgId = orgId ?? "";
+  const safeRepoId = repoId ?? "";
+
   const [repo, setRepo] = useState<Repository | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -123,17 +130,19 @@ export function AnalysisPage() {
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
 
   async function loadAll() {
-    if (!orgId || !repoId) return;
+    if (!orgId || !repoId) {
+      setLoadError("Invalid repository URL.");
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setLoadError(null);
 
     try {
       /*
-       * IMPORTANT:
-       *
-       * Repository data is always real.
-       * Only analysis result data can use mocks.
+       * Repository data is ALWAYS real.
+       * Only analysis result/history data can use mocks.
        */
       const repoData = await getRepository(orgId, repoId);
 
@@ -156,7 +165,7 @@ export function AnalysisPage() {
         orgId,
         repoId,
         1,
-        20
+        20,
       );
 
       setHistory(analysisList.items);
@@ -166,10 +175,13 @@ export function AnalysisPage() {
       setLatest(first);
       setSelectedId(first?.id ?? null);
     } catch (err) {
-      console.error("Failed to load repository/analysis:", err);
+      console.error(
+        "Failed to load repository/analysis:",
+        err,
+      );
 
       setLoadError(
-        "Couldn't load this repository's analysis data."
+        "Couldn't load this repository's analysis data.",
       );
     } finally {
       setLoading(false);
@@ -179,12 +191,18 @@ export function AnalysisPage() {
   useEffect(() => {
     loadAll();
 
+    // loadAll intentionally depends on the route parameters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, repoId]);
 
+  /*
+   * Real analysis polling.
+   *
+   * When mock mode is disabled, this polls the backend analysis job.
+   */
   const polledLatest = useAnalysisPolling(
-    orgId,
-    repoId,
+    safeOrgId,
+    safeRepoId,
     USE_MOCK_ANALYSIS_DATA ? null : latest,
     (settled) => {
       setHistory((prev) => [
@@ -197,7 +215,7 @@ export function AnalysisPage() {
       if (settled.id === selectedId) {
         loadResultFor(settled);
       }
-    }
+    },
   );
 
   const effectiveLatest = USE_MOCK_ANALYSIS_DATA
@@ -215,7 +233,9 @@ export function AnalysisPage() {
       return;
     }
 
-    if (!orgId || !repoId) return;
+    if (!orgId || !repoId) {
+      return;
+    }
 
     setResultLoading(true);
 
@@ -223,12 +243,16 @@ export function AnalysisPage() {
       const r = await getAnalysisResult(
         orgId,
         repoId,
-        analysis.id
+        analysis.id,
       );
 
       setResult(r);
     } catch (error) {
-      console.error("Failed to load analysis result:", error);
+      console.error(
+        "Failed to load analysis result:",
+        error,
+      );
+
       setResult(null);
     } finally {
       setResultLoading(false);
@@ -253,7 +277,7 @@ export function AnalysisPage() {
     setSelectedId(id);
 
     const entry = history.find(
-      (h) => h.id === id
+      (h) => h.id === id,
     );
 
     if (entry) {
@@ -262,7 +286,13 @@ export function AnalysisPage() {
   }
 
   async function handleRun() {
-    if (!orgId || !repoId) return;
+    if (!orgId || !repoId) {
+      setConflictNotice(
+        "Invalid repository. Please return to the repository list and try again.",
+      );
+
+      return;
+    }
 
     setConflictNotice(null);
 
@@ -305,8 +335,10 @@ export function AnalysisPage() {
             ...base,
             status: "completed",
             progress: 100,
-            completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            completed_at:
+              new Date().toISOString(),
+            updated_at:
+              new Date().toISOString(),
           };
 
           setLatest(finished);
@@ -314,12 +346,12 @@ export function AnalysisPage() {
           setHistory((prev) => [
             finished,
             ...prev.filter(
-              (h) => h.id !== finished.id
+              (h) => h.id !== finished.id,
             ),
           ]);
 
           setResult(
-            getMockResult(7001) ?? null
+            getMockResult(7001) ?? null,
           );
         } else {
           setLatest((prev) =>
@@ -328,7 +360,7 @@ export function AnalysisPage() {
                   ...prev,
                   progress: Math.round(progress),
                 }
-              : prev
+              : prev,
           );
         }
       }, 700);
@@ -342,7 +374,7 @@ export function AnalysisPage() {
     try {
       const created = await startAnalysis(
         orgId,
-        repoId
+        repoId,
       );
 
       setHistory((prev) => [
@@ -356,18 +388,18 @@ export function AnalysisPage() {
     } catch (err: any) {
       console.error(
         "Failed to start analysis:",
-        err
+        err,
       );
 
       if (err?.response?.status === 409) {
         setConflictNotice(
-          "This repository already has an active analysis."
+          "This repository already has an active analysis.",
         );
 
         await loadAll();
       } else {
         setConflictNotice(
-          "Couldn't start a new analysis. Try again."
+          "Couldn't start a new analysis. Try again.",
         );
       }
     }
@@ -405,7 +437,7 @@ export function AnalysisPage() {
 
   const isActive = effectiveLatest
     ? ACTIVE_STATUSES.has(
-        effectiveLatest.status
+        effectiveLatest.status,
       )
     : false;
 
@@ -414,7 +446,7 @@ export function AnalysisPage() {
 
   const selectedEntry =
     history.find(
-      (h) => h.id === selectedId
+      (h) => h.id === selectedId,
     ) ?? null;
 
   const statusColorClass: Record<
@@ -507,9 +539,7 @@ export function AnalysisPage() {
                   }}
                 />
 
-                {statusLabel(
-                  displayStatus
-                )}
+                {statusLabel(displayStatus)}
               </span>
             </div>
           </div>
@@ -523,16 +553,14 @@ export function AnalysisPage() {
           >
             <Play className="h-3.5 w-3.5" />
 
-            {runButtonLabel(
-              displayStatus
-            )}
+            {runButtonLabel(displayStatus)}
           </button>
 
           {effectiveLatest?.completed_at && (
             <span className="text-[11.5px] text-[var(--cd-ink-faint)]">
               Last analyzed{" "}
               {formatDate(
-                effectiveLatest.completed_at
+                effectiveLatest.completed_at,
               )}
             </span>
           )}
@@ -616,8 +644,7 @@ export function AnalysisPage() {
 
       {/* Failed */}
       {!isActive &&
-        effectiveLatest?.status ===
-          "failed" &&
+        effectiveLatest?.status === "failed" &&
         viewingLatest && (
           <div className="mb-4 overflow-hidden rounded-xl border border-[var(--cd-risk)]/30 bg-[var(--cd-surface)]">
             <div className="border-b border-[var(--cd-risk)]/25 bg-[var(--cd-risk-bg)] px-4.5 py-3.5">
@@ -636,7 +663,7 @@ export function AnalysisPage() {
               <div className="mb-3.5 max-w-[520px] text-[12.5px] leading-relaxed text-[var(--cd-ink-soft)]">
                 This analysis failed{" "}
                 {formatDate(
-                  effectiveLatest.updated_at
+                  effectiveLatest.updated_at,
                 )}
                 .
               </div>
@@ -659,8 +686,7 @@ export function AnalysisPage() {
 
       {/* Historical failure */}
       {selectedEntry &&
-        selectedEntry.status ===
-          "failed" &&
+        selectedEntry.status === "failed" &&
         !viewingLatest && (
           <div className="mb-4 overflow-hidden rounded-xl border border-[var(--cd-risk)]/30 bg-[var(--cd-surface)]">
             <div className="border-b border-[var(--cd-risk)]/25 bg-[var(--cd-risk-bg)] px-4.5 py-3.5">
@@ -673,7 +699,7 @@ export function AnalysisPage() {
               <div className="mb-3.5 max-w-[520px] text-[12.5px] leading-relaxed text-[var(--cd-ink-soft)]">
                 This analysis failed on{" "}
                 {formatDate(
-                  selectedEntry.updated_at
+                  selectedEntry.updated_at,
                 )}
                 .
               </div>
@@ -694,7 +720,7 @@ export function AnalysisPage() {
             <span>
               Viewing analysis from{" "}
               {formatDate(
-                selectedEntry.created_at
+                selectedEntry.created_at,
               )}
             </span>
 
@@ -702,7 +728,7 @@ export function AnalysisPage() {
               onClick={() =>
                 effectiveLatest &&
                 handleSelectHistory(
-                  effectiveLatest.id
+                  effectiveLatest.id,
                 )
               }
               className="cursor-pointer text-[11.5px] font-semibold underline"
@@ -713,8 +739,7 @@ export function AnalysisPage() {
         )}
 
       {/* Completed result */}
-      {selectedEntry?.status ===
-        "completed" && (
+      {selectedEntry?.status === "completed" && (
         <>
           {resultLoading && (
             <div className="mb-4 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-6 text-center text-[13px] text-[var(--cd-ink-soft)]">
@@ -750,24 +775,20 @@ export function AnalysisPage() {
                       "Complexity",
                       result.metrics.complexity,
                     ],
-                  ].map(
-                    ([label, value]) => (
-                      <div
-                        key={
-                          label as string
-                        }
-                        className="bg-[var(--cd-surface)] p-4"
-                      >
-                        <span className="text-[11px] font-medium text-[var(--cd-ink-faint)]">
-                          {label}
-                        </span>
+                  ].map(([label, value]) => (
+                    <div
+                      key={label as string}
+                      className="bg-[var(--cd-surface)] p-4"
+                    >
+                      <span className="text-[11px] font-medium text-[var(--cd-ink-faint)]">
+                        {label}
+                      </span>
 
-                        <span className="mt-1.5 block font-mono text-[20px] font-semibold text-[var(--cd-ink)]">
-                          {value}
-                        </span>
-                      </div>
-                    )
-                  )}
+                      <span className="mt-1.5 block font-mono text-[20px] font-semibold text-[var(--cd-ink)]">
+                        {value}
+                      </span>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--cd-border-soft)] p-5">
@@ -779,8 +800,7 @@ export function AnalysisPage() {
                     <div className="mt-0.5 text-[11px] text-[var(--cd-ink-faint)]">
                       {
                         maintBand(
-                          result.metrics
-                            .maintainability
+                          result.metrics.maintainability,
                         ).label
                       }
                     </div>
@@ -793,7 +813,7 @@ export function AnalysisPage() {
                           background:
                             maintBand(
                               result.metrics
-                                .maintainability
+                                .maintainability,
                             ).color,
                         }}
                       />
@@ -806,12 +826,12 @@ export function AnalysisPage() {
                       color:
                         maintBand(
                           result.metrics
-                            .maintainability
+                            .maintainability,
                         ).color,
                     }}
                   >
                     {result.metrics.maintainability.toFixed(
-                      1
+                      1,
                     )}
 
                     <span className="text-[13px] font-medium text-[var(--cd-ink-faint)]">
@@ -829,41 +849,37 @@ export function AnalysisPage() {
                 </div>
 
                 <div className="p-5">
-                  {result.technologies.map(
-                    (t) => (
-                      <div
-                        key={t.id}
-                        className="flex items-center gap-3.5 border-b border-[var(--cd-border-soft)] py-2.5 last:border-none"
-                      >
-                        <span className="w-[110px] flex-shrink-0 text-[12.5px] font-medium text-[var(--cd-ink)]">
-                          {t.technology}
-                        </span>
+                  {result.technologies.map((t) => (
+                    <div
+                      key={t.id}
+                      className="flex items-center gap-3.5 border-b border-[var(--cd-border-soft)] py-2.5 last:border-none"
+                    >
+                      <span className="w-[110px] flex-shrink-0 text-[12.5px] font-medium text-[var(--cd-ink)]">
+                        {t.technology}
+                      </span>
 
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--cd-sunken)]">
-                          <div
-                            className="h-full rounded-full bg-[var(--cd-accent)]"
-                            style={{
-                              width: `${Math.round(
-                                t.confidence_score *
-                                  100
-                              )}%`,
-                            }}
-                          />
-                        </div>
-
-                        <span className="w-[110px] flex-shrink-0 text-right text-[11.5px] text-[var(--cd-ink-faint)]">
-                          <b className="font-mono font-semibold text-[var(--cd-ink)]">
-                            {Math.round(
-                              t.confidence_score *
-                                100
-                            )}
-                            %
-                          </b>{" "}
-                          confidence
-                        </span>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--cd-sunken)]">
+                        <div
+                          className="h-full rounded-full bg-[var(--cd-accent)]"
+                          style={{
+                            width: `${Math.round(
+                              t.confidence_score * 100,
+                            )}%`,
+                          }}
+                        />
                       </div>
-                    )
-                  )}
+
+                      <span className="w-[110px] flex-shrink-0 text-right text-[11.5px] text-[var(--cd-ink-faint)]">
+                        <b className="font-mono font-semibold text-[var(--cd-ink)]">
+                          {Math.round(
+                            t.confidence_score * 100,
+                          )}
+                          %
+                        </b>{" "}
+                        confidence
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -881,12 +897,11 @@ export function AnalysisPage() {
                         try {
                           return JSON.stringify(
                             JSON.parse(
-                              result
-                                .dependency_graph
-                                .graph_data
+                              result.dependency_graph
+                                .graph_data,
                             ),
                             null,
-                            2
+                            2,
                           );
                         } catch {
                           return result
@@ -897,8 +912,8 @@ export function AnalysisPage() {
                     </pre>
                   ) : (
                     <span className="text-[12.5px] text-[var(--cd-ink-faint)]">
-                      No dependency graph
-                      data for this analysis.
+                      No dependency graph data
+                      for this analysis.
                     </span>
                   )}
                 </div>
@@ -960,9 +975,7 @@ export function AnalysisPage() {
                   <tr
                     key={h.id}
                     onClick={() =>
-                      handleSelectHistory(
-                        h.id
-                      )
+                      handleSelectHistory(h.id)
                     }
                     className={`cursor-pointer ${
                       h.id === selectedId
@@ -971,9 +984,7 @@ export function AnalysisPage() {
                     }`}
                   >
                     <td className="border-b border-[var(--cd-border-soft)] px-5 py-2.5 font-mono text-[12.5px] text-[var(--cd-ink)]">
-                      {formatDate(
-                        h.created_at
-                      )}
+                      {formatDate(h.created_at)}
                     </td>
 
                     <td className="border-b border-[var(--cd-border-soft)] px-5 py-2.5">
@@ -996,15 +1007,12 @@ export function AnalysisPage() {
                           }}
                         />
 
-                        {statusLabel(
-                          h.status
-                        )}
+                        {statusLabel(h.status)}
                       </span>
                     </td>
 
                     <td className="border-b border-[var(--cd-border-soft)] px-5 py-2.5 font-mono text-[12.5px] text-[var(--cd-ink)]">
-                      {h.status ===
-                      "completed"
+                      {h.status === "completed"
                         ? "100%"
                         : `${h.progress}%`}
                     </td>
