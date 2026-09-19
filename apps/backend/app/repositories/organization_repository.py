@@ -110,3 +110,14 @@ class OrganizationRepository:
         result = await self.db.execute(statement)
 
         return result.scalars().all()
+
+    async def delete(
+        self,
+        organization: Organization,
+    ) -> None:
+        """
+        Delete an organization from the database.
+        """
+
+        await self.db.delete(organization)
+        await self.db.flush()

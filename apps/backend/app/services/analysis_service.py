@@ -22,7 +22,9 @@ This service does not own:
 
 from __future__ import annotations
 
-from app.models.analysis import AnalysisJob, AnalysisResult
+from datetime import datetime, timezone
+
+from app.models.analysis import AnalysisJob, AnalysisResult, AnalysisStatus
 from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.repository_repository import RepositoryRepository
 from app.services.repository_service import RepositoryNotFoundError
@@ -86,9 +88,25 @@ class AnalysisService:
         )
 
         if active_analysis is not None:
-            raise AnalysisAlreadyActiveError(
-                "Repository already has an active analysis.",
-            )
+            now = datetime.now(timezone.utc)
+            created_at = active_analysis.created_at
+            if created_at is not None:
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                age_seconds = (now - created_at).total_seconds()
+            else:
+                age_seconds = 0
+
+            # If the active job is stale (older than 3 minutes, or pending > 60s), mark it failed to allow re-analysis
+            if age_seconds > 180 or (active_analysis.status == AnalysisStatus.PENDING and age_seconds > 45):
+                active_analysis.status = AnalysisStatus.FAILED
+                active_analysis.error_message = "Analysis timed out or was superseded."
+                active_analysis.completed_at = now
+                await self.analysis_repository.update(active_analysis)
+            else:
+                raise AnalysisAlreadyActiveError(
+                    "Repository already has an active analysis.",
+                )
 
         job = AnalysisJob(
             repository_id=repository_id,

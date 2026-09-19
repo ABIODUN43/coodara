@@ -226,8 +226,8 @@ async def test_execute_analysis_in_background_commits_on_success() -> None:
 @pytest.mark.asyncio
 async def test_execute_analysis_in_background_rolls_back_on_failure() -> None:
     """
-    Failed background execution should roll back its transaction
-    and propagate the original exception.
+    Failed background execution should roll back its transaction,
+    persist the FAILED state in PostgreSQL, and propagate the original exception.
     """
 
     dispatcher = MagicMock()
@@ -243,6 +243,7 @@ async def test_execute_analysis_in_background_rolls_back_on_failure() -> None:
     db = make_database_session()
 
     session_factory = make_session_context(db)
+    mock_persist = AsyncMock()
 
     with (
         patch(
@@ -252,10 +253,15 @@ async def test_execute_analysis_in_background_rolls_back_on_failure() -> None:
         patch(
             "app.analysis.factory.create_analysis_dispatcher",
             return_value=dispatcher,
-        ),pytest.raises(
-        RuntimeError,
-        match="analysis failed",
-    ) as exc_info
+        ),
+        patch(
+            "app.workers.analysis_tasks._persist_failed_state",
+            mock_persist,
+        ),
+        pytest.raises(
+            RuntimeError,
+            match="analysis failed",
+        ) as exc_info,
     ):
         await execute_analysis_in_background(
             analysis_id=42,
@@ -271,6 +277,8 @@ async def test_execute_analysis_in_background_rolls_back_on_failure() -> None:
 
     db.rollback.assert_awaited_once()
 
+    mock_persist.assert_awaited_once_with(42, "analysis failed")
+
     session_factory.__aenter__.assert_awaited_once()
 
-    session_factory.__aexit__.assert_awaited_once()
+    session_factory.__aexit__.assert_awaited_once()

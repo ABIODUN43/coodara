@@ -48,6 +48,10 @@ class ArchitectureIssueCategory(StrEnum):
     DEPENDENCY_HOTSPOT = "dependency_hotspot"
     COMPLEXITY_HOTSPOT = "complexity_hotspot"
     LARGE_MODULE = "large_module"
+    CIRCULAR_DEPENDENCY = "circular_dependency"
+    LAYER_VIOLATION = "layer_violation"
+    UNSTABLE_DEPENDENCY = "unstable_dependency"
+    HUB_MODULE = "hub_module"
 
 
 class ArchitectureRecommendationPriority(StrEnum):

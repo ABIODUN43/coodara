@@ -4,15 +4,14 @@ import {
   Search,
   GitBranch as RepoIcon,
   ChevronRight,
+  Network,
+  FileCode,
 } from "lucide-react";
 
 import { useProject } from "@/context/ProjectContext";
 import { listRepositories } from "@/api/repositories";
 
 import type { Repository } from "@/types/repository";
-
-import { USE_MOCK_REPOSITORIES_DATA } from "@/dev/devFlags";
-import { getMockRepositoriesForOrg } from "@/data/mockRepositories";
 
 export function RepositoriesPage() {
   const { activeProject } = useProject();
@@ -59,14 +58,6 @@ export function RepositoriesPage() {
 
     setLoading(true);
     setLoadError(null);
-
-    if (USE_MOCK_REPOSITORIES_DATA) {
-      setRepos(
-        getMockRepositoriesForOrg(organizationId),
-      );
-      setLoading(false);
-      return;
-    }
 
     try {
       const response = await listRepositories(
@@ -238,16 +229,18 @@ export function RepositoriesPage() {
           !loadError &&
           filteredRepositories.map(
             (repository) => (
-              <Link
+              <div
                 key={repository.id}
-                to={`/dashboard/organizations/${organizationId}/repositories/${repository.id}/analysis`}
-                className="flex cursor-pointer items-center gap-3.5 border-b border-[var(--cd-border-soft)] px-5 py-3.5 last:border-b-0 hover:bg-[var(--cd-sunken)]"
+                className="flex items-center justify-between border-b border-[var(--cd-border-soft)] px-5 py-3.5 last:border-b-0 hover:bg-[var(--cd-sunken)] transition-colors"
               >
-                <div className="min-w-0 flex-1">
+                <Link
+                  to={`/dashboard/organizations/${organizationId}/repositories/${repository.id}/analysis`}
+                  className="min-w-0 flex-1 cursor-pointer"
+                >
                   <div className="flex items-center gap-2">
                     <RepoIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--cd-ink-faint)]" />
 
-                    <span className="truncate font-mono text-[13px] font-semibold text-[var(--cd-ink)]">
+                    <span className="truncate font-mono text-[13px] font-semibold text-[var(--cd-ink)] hover:text-[var(--cd-accent)]">
                       {repository.full_name}
                     </span>
                   </div>
@@ -274,10 +267,26 @@ export function RepositoriesPage() {
                       {repository.default_branch}
                     </span>
                   </div>
-                </div>
+                </Link>
 
-                <ChevronRight className="h-4 w-4 flex-shrink-0 text-[var(--cd-ink-faint)]" />
-              </Link>
+                <div className="flex items-center gap-2 ml-4">
+                  <Link
+                    to={`/dashboard/organizations/${organizationId}/repositories/${repository.id}/architecture`}
+                    className="flex items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:border-[var(--cd-accent)] hover:text-[var(--cd-accent)] transition-colors"
+                  >
+                    <Network className="h-3.5 w-3.5 text-[var(--cd-accent)]" />
+                    <span>Architecture Map</span>
+                  </Link>
+
+                  <Link
+                    to={`/dashboard/organizations/${organizationId}/repositories/${repository.id}/analysis`}
+                    className="flex items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:border-[var(--cd-accent)] hover:text-[var(--cd-accent)] transition-colors"
+                  >
+                    <FileCode className="h-3.5 w-3.5 text-emerald-500" />
+                    <span>AST Analysis</span>
+                  </Link>
+                </div>
+              </div>
             ),
           )}
       </div>

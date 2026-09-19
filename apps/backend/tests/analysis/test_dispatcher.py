@@ -2,7 +2,7 @@
 Tests for analysis execution dispatching.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.analysis.dispatcher import AnalysisExecutionDispatcher
@@ -44,3 +44,38 @@ async def test_dispatch_executes_analysis_job() -> None:
     execution_service.execute.assert_awaited_once_with(
         analysis_id=42,
     )
+
+
+def test_enqueue_submits_task_to_celery() -> None:
+    """Dispatcher enqueue should call execute_analysis_task.delay."""
+    execution_service = make_execution_service()
+    dispatcher = AnalysisExecutionDispatcher(
+        execution_service=execution_service,
+    )
+
+    mock_async_result = MagicMock()
+    mock_async_result.id = "task-123"
+
+    with patch(
+        "app.workers.analysis_tasks.execute_analysis_task.delay",
+        return_value=mock_async_result,
+    ) as mock_delay:
+        task_id = dispatcher.enqueue(analysis_id=101)
+
+        assert task_id == "task-123"
+        mock_delay.assert_called_once_with(101)
+
+
+def test_enqueue_handles_broker_error_gracefully() -> None:
+    """Dispatcher enqueue should catch exceptions and return None."""
+    execution_service = make_execution_service()
+    dispatcher = AnalysisExecutionDispatcher(
+        execution_service=execution_service,
+    )
+
+    with patch(
+        "app.workers.analysis_tasks.execute_analysis_task.delay",
+        side_effect=Exception("Redis connection error"),
+    ):
+        task_id = dispatcher.enqueue(analysis_id=101)
+        assert task_id is None

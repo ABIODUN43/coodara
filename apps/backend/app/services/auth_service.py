@@ -99,6 +99,27 @@ class AuthService:
             avatar_url=avatar_url,
         )
 
+    async def authenticate_demo_user(
+        self,
+        db: AsyncSession,
+        username: str = "Abiodun43",
+        email: str = "user@coodara.ai",
+    ) -> User:
+        """
+        Authenticate or initialize a demo user for instant login.
+        """
+        repository = UserRepository(db)
+        user = await repository.get_by_github_id(439999)
+        if user is not None:
+            return user
+        return await repository.create(
+            github_id=439999,
+            username=username,
+            email=email,
+            avatar_url="https://avatars.githubusercontent.com/u/439999?v=4",
+        )
+
+
     async def create_session(
         self,
         user: User,

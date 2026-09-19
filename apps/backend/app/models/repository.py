@@ -27,7 +27,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.analysis import AnalysisJob
-    from app.models.architecture import ArchitectureSnapshot
+    from app.models.architecture import (
+        ArchitectureDecision,
+        ArchitectureRule,
+        ArchitectureSimulation,
+        ArchitectureSnapshot,
+    )
+    from app.models.memory import ArchitectureEvent, ArchitectureMemory
     from app.models.organization import Organization
 
 
@@ -150,6 +156,31 @@ class Repository(Base):
 
     architecture_snapshots: Mapped[list[ArchitectureSnapshot]] = relationship(
         "ArchitectureSnapshot",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+
+    architecture_memory: Mapped[ArchitectureMemory | None] = relationship(
+        "ArchitectureMemory",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+    architecture_decisions: Mapped[list[ArchitectureDecision]] = relationship(
+        "ArchitectureDecision",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+
+    architecture_rules: Mapped[list[ArchitectureRule]] = relationship(
+        "ArchitectureRule",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+
+    architecture_simulations: Mapped[list[ArchitectureSimulation]] = relationship(
+        "ArchitectureSimulation",
         back_populates="repository",
         cascade="all, delete-orphan",
     )

@@ -1,20 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, X, ChevronRight, ChevronDown, Check } from "lucide-react";
+import { Plus, X, ChevronRight, ChevronDown, Check, Trash2, AlertTriangle } from "lucide-react";
 import { Dropdown, Label } from "@heroui/react";
-import { listOrganizations, createOrganization } from "@/api/organizations";
+import { listOrganizations, createOrganization, deleteOrganization } from "@/api/organizations";
 import { listRepositories } from "@/api/repositories";
 import type { Organization } from "@/types/organization";
-import { USE_MOCK_ORGANIZATIONS_DATA, } from "@/dev/devFlags";
-import { MOCK_ORGANIZATIONS } from "@/data/mockOrganizations";
-import { getMockRepositoriesForOrg } from "@/data/mockRepositories";
 import { useDashboardAction } from "@/context/DashboardActionContext";
+import { useProject } from "@/context/ProjectContext";
 
-// role/members/health/band are extra fields present on the mock dataset
-// for demo purposes — the real OrganizationResponse contract doesn't
-// include them yet, so everything below treats them as optional and
-// degrades gracefully (badge/health/status pill just don't render) once
-// running against the real backend.
 interface OrgWithExtras extends Organization {
   repoCount: number;
   role?: "owner" | "admin" | "member";
@@ -49,6 +42,7 @@ const ROLE_FILTERS = ["All roles", "Owner", "Admin", "Member"] as const;
 
 export function OrganizationsPage() {
   const navigate = useNavigate();
+  const { refetch: refetchGlobalProjects, setActiveProject } = useProject();
   const [organizations, setOrganizations] = useState<OrgWithExtras[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -60,26 +54,17 @@ export function OrganizationsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // TopNavbar's primary action becomes "Create organization" while this
-  // page is open, instead of the default "Import repository".
+  // Delete modal state
+  const [deletingOrg, setDeletingOrg] = useState<Organization | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   useDashboardAction(
     { label: "Create organization", onClick: () => setIsModalOpen(true) },
     []
   );
 
   async function loadOrgs() {
-    if (USE_MOCK_ORGANIZATIONS_DATA) {
-      const withCounts = MOCK_ORGANIZATIONS.map((org: any) => ({
-        ...org,
-        repoCount: getMockRepositoriesForOrg(org.id).length,
-        role: org.role,
-        membersCount: org.members,
-        healthScore: org.health,
-      }));
-      setOrganizations(withCounts);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setLoadError(null);
     try {
@@ -134,21 +119,21 @@ export function OrganizationsPage() {
   async function handleCreate() {
     const name = newOrgName.trim();
     if (!name) return;
-    if (USE_MOCK_ORGANIZATIONS_DATA) {
-      setCreateError("Creating organizations is disabled while running on demo data.");
-      return;
-    }
     setCreating(true);
     setCreateError(null);
     try {
-      await createOrganization({
+      const created = await createOrganization({
         name,
-        slug: slugify(name),
+        slug: slugify(name) + "-" + Math.floor(Math.random() * 1000),
         description: newOrgDescription.trim() || null,
       });
       setIsModalOpen(false);
       setNewOrgName("");
       setNewOrgDescription("");
+      await refetchGlobalProjects();
+      if (created) {
+        setActiveProject(created);
+      }
       await loadOrgs();
     } catch (err: any) {
       if (err?.response?.status === 409) {
@@ -158,6 +143,22 @@ export function OrganizationsPage() {
       }
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deletingOrg) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteOrganization(deletingOrg.id);
+      await refetchGlobalProjects();
+      setDeletingOrg(null);
+      await loadOrgs();
+    } catch (err: any) {
+      setDeleteError(err?.response?.data?.detail ?? "Failed to delete organization.");
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -175,33 +176,40 @@ export function OrganizationsPage() {
           </p>
         </div>
 
-        {/* Role filter — replaces the page-level Create button. Actual
-            creation happens via the TopNavbar action (top of screen) or
-            the dashed "Create organization" tile in the grid below. */}
-        <Dropdown>
-          <Dropdown.Trigger className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-3 text-[12.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)]">
-            <ChevronDown className="h-3.5 w-3.5" />
-            {roleFilter}
-          </Dropdown.Trigger>
-          <Dropdown.Popover className="w-[160px]">
-            <Dropdown.Menu>
-              {ROLE_FILTERS.map((r) => (
-                <Dropdown.Item
-                  key={r}
-                  id={r}
-                  textValue={r}
-                  onAction={() => setRoleFilter(r)}
-                  className="cursor-pointer"
-                >
-                  <div className="flex w-full items-center justify-between gap-2">
-                    <Label>{r}</Label>
-                    {r === roleFilter && <Check className="h-3.5 w-3.5 text-[var(--cd-accent)]" />}
-                  </div>
-                </Dropdown.Item>
-              ))}
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-1.5 text-[12.5px] font-medium text-white shadow-sm hover:bg-[var(--cd-accent-hover)] transition-all"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Create Organization
+          </button>
+
+          <Dropdown>
+            <Dropdown.Trigger className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-3 text-[12.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)]">
+              <ChevronDown className="h-3.5 w-3.5" />
+              {roleFilter}
+            </Dropdown.Trigger>
+            <Dropdown.Popover className="w-[160px]">
+              <Dropdown.Menu>
+                {ROLE_FILTERS.map((r) => (
+                  <Dropdown.Item
+                    key={r}
+                    id={r}
+                    textValue={r}
+                    onAction={() => setRoleFilter(r)}
+                    className="cursor-pointer"
+                  >
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <Label>{r}</Label>
+                      {r === roleFilter && <Check className="h-3.5 w-3.5 text-[var(--cd-accent)]" />}
+                    </div>
+                  </Dropdown.Item>
+                ))}
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
+        </div>
       </div>
 
       {!loading && kpis.length > 0 && (
@@ -258,61 +266,65 @@ export function OrganizationsPage() {
           {filteredOrganizations.map((org) => {
             const band = bandFor(org.healthScore);
             return (
-              <button
+              <div
                 key={org.id}
-                onClick={() => navigate(`/dashboard/organizations/${org.id}`)}
-                className="flex cursor-pointer flex-col gap-3.5 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-[18px] text-left transition-all hover:border-[#D2D3DA] hover:shadow-[0_6px_20px_rgba(20,20,30,0.06)]"
+                className="group relative flex flex-col justify-between rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-[18px] text-left transition-all hover:border-[#D2D3DA] hover:shadow-[0_6px_20px_rgba(20,20,30,0.06)]"
               >
-                <div className="flex items-start justify-between gap-2.5">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] bg-[var(--cd-accent)] text-[14px] font-bold text-white">
-                      {org.name[0]?.toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[14.5px] font-semibold text-[var(--cd-ink)]">
-                        {org.name}
+                <div
+                  className="cursor-pointer"
+                  onClick={() => navigate(`/dashboard/organizations/${org.id}`)}
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] bg-[var(--cd-accent)] text-[14px] font-bold text-white">
+                        {org.name[0]?.toUpperCase()}
                       </div>
-                      <div className="mt-0.5 truncate text-[10.5px] uppercase tracking-wide text-[var(--cd-ink-faint)]">
-                        {org.role ?? org.description}
+                      <div className="min-w-0">
+                        <div className="truncate text-[14.5px] font-semibold text-[var(--cd-ink)]">
+                          {org.name}
+                        </div>
+                        <div className="mt-0.5 truncate text-[10.5px] uppercase tracking-wide text-[var(--cd-ink-faint)]">
+                          {org.role ?? org.description ?? "Active Workspace"}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  {org.role && (
-                    <span
-                      className={`flex-shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold capitalize ${
-                        org.role === "owner"
-                          ? "bg-[var(--cd-accent-soft)] text-[var(--cd-accent)]"
-                          : "bg-[var(--cd-sunken)] text-[var(--cd-ink-soft)]"
-                      }`}
-                    >
-                      {org.role}
-                    </span>
-                  )}
-                </div>
 
-                <div className="flex gap-[18px]">
-                  {org.membersCount != null && (
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-mono text-[15px] font-semibold text-[var(--cd-ink)]">
-                        {org.membersCount}
-                      </span>
-                      <span className="text-[10.5px] text-[var(--cd-ink-faint)]">Members</span>
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-mono text-[15px] font-semibold text-[var(--cd-ink)]">
-                      {org.repoCount}
-                    </span>
-                    <span className="text-[10.5px] text-[var(--cd-ink-faint)]">Repositories</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingOrg(org);
+                      }}
+                      title="Delete Organization"
+                      className="cursor-pointer rounded-lg p-1.5 text-[var(--cd-ink-faint)] hover:bg-[var(--cd-risk-bg)] hover:text-[var(--cd-risk)] transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
-                  {org.healthScore != null && (
+
+                  <div className="my-3.5 flex gap-[18px]">
+                    {org.membersCount != null && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono text-[15px] font-semibold text-[var(--cd-ink)]">
+                          {org.membersCount}
+                        </span>
+                        <span className="text-[10.5px] text-[var(--cd-ink-faint)]">Members</span>
+                      </div>
+                    )}
                     <div className="flex flex-col gap-0.5">
                       <span className="font-mono text-[15px] font-semibold text-[var(--cd-ink)]">
-                        {org.healthScore}
+                        {org.repoCount}
                       </span>
-                      <span className="text-[10.5px] text-[var(--cd-ink-faint)]">Health score</span>
+                      <span className="text-[10.5px] text-[var(--cd-ink-faint)]">Repositories</span>
                     </div>
-                  )}
+                    {org.healthScore != null && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono text-[15px] font-semibold text-[var(--cd-ink)]">
+                          {org.healthScore}
+                        </span>
+                        <span className="text-[10.5px] text-[var(--cd-ink-faint)]">Health score</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between border-t border-[var(--cd-border-soft)] pt-3">
@@ -324,19 +336,22 @@ export function OrganizationsPage() {
                       {BAND_STYLE[band].label}
                     </span>
                   ) : (
-                    <span />
+                    <span className="text-[11px] text-[var(--cd-ink-faint)]">Workspace Active</span>
                   )}
-                  <span className="flex items-center gap-0.5 text-[11.5px] font-medium text-[var(--cd-accent)]">
+                  <button
+                    onClick={() => navigate(`/dashboard/organizations/${org.id}`)}
+                    className="cursor-pointer flex items-center gap-0.5 text-[11.5px] font-medium text-[var(--cd-accent)] hover:underline"
+                  >
                     Open <ChevronRight className="h-3 w-3" />
-                  </span>
+                  </button>
                 </div>
-              </button>
+              </div>
             );
           })}
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex min-h-[140px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--cd-border)] text-[var(--cd-ink-faint)] hover:border-[var(--cd-accent)] hover:bg-[var(--cd-accent-soft)] hover:text-[var(--cd-accent)]"
+            className="flex min-h-[140px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--cd-border)] text-[var(--cd-ink-faint)] hover:border-[var(--cd-accent)] hover:bg-[var(--cd-accent-soft)] hover:text-[var(--cd-accent)] transition-all"
           >
             <Plus className="h-5 w-5" />
             <span className="text-[12.5px] font-medium">Create organization</span>
@@ -344,9 +359,10 @@ export function OrganizationsPage() {
         </div>
       )}
 
+      {/* Create Organization Modal */}
       {isModalOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={() => setIsModalOpen(false)}
         >
           <div
@@ -406,6 +422,52 @@ export function OrganizationsPage() {
                 className="cursor-pointer rounded-lg bg-[var(--cd-accent)] px-3.5 py-2 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)] disabled:cursor-not-allowed disabled:opacity-55"
               >
                 {creating ? "Creating..." : "Create organization"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingOrg && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setDeletingOrg(null)}
+        >
+          <div
+            className="w-full max-w-[420px] rounded-[14px] border border-[var(--cd-border)] bg-[var(--cd-surface)] p-[22px] shadow-[0_20px_50px_rgba(20,20,30,0.2)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center gap-2.5 text-[var(--cd-risk)]">
+              <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+              <h2 className="text-[15px] font-semibold text-[var(--cd-ink)]">Delete organization?</h2>
+            </div>
+
+            <p className="text-[13px] text-[var(--cd-ink-soft)] leading-relaxed">
+              Are you sure you want to permanently delete <strong className="text-[var(--cd-ink)]">{deletingOrg.name}</strong>?
+              This will remove all associated repositories, architecture models, and telemetry. This action cannot be undone.
+            </p>
+
+            {deleteError && (
+              <div className="mt-3 rounded-lg bg-[var(--cd-risk-bg)] px-3 py-2 text-[12px] text-[var(--cd-risk)]">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2.5">
+              <button
+                onClick={() => setDeletingOrg(null)}
+                disabled={isDeleting}
+                className="cursor-pointer rounded-lg px-3.5 py-2 text-[12.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="cursor-pointer rounded-lg bg-[var(--cd-risk)] px-3.5 py-2 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-55"
+              >
+                {isDeleting ? "Deleting..." : "Permanently Delete"}
               </button>
             </div>
           </div>

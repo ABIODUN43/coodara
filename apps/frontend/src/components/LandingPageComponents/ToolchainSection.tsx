@@ -27,8 +27,8 @@ export function ToolchainSection() {
           </div>
         ))}
         <div className="flex flex-col items-center gap-1 bg-black p-6 text-center text-white sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
-            UNDERSTANDS ARCHITECTURE
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">
+            IMPROVES ARCHITECTURE
           </p>
           <p className="text-xl font-bold">Coodara</p>
         </div>

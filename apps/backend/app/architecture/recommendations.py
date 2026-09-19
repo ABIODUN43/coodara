@@ -88,4 +88,40 @@ class ArchitectureRecommendationEngine:
                 priority=ArchitectureRecommendationPriority.MEDIUM,
             )
 
+        if issue.category == ArchitectureIssueCategory.CIRCULAR_DEPENDENCY:
+            return ArchitectureRecommendationSnapshot(
+                recommendation=(
+                    f"Break circular dependency loop ({issue.description}) "
+                    "by applying Dependency Inversion (DIP) or extracting shared interfaces into a third module."
+                ),
+                priority=ArchitectureRecommendationPriority.HIGH,
+            )
+
+        if issue.category == ArchitectureIssueCategory.HUB_MODULE:
+            return ArchitectureRecommendationSnapshot(
+                recommendation=(
+                    "Decompose architectural hub module into smaller single-responsibility "
+                    "services and decouple inbound callers using event-driven interfaces."
+                ),
+                priority=ArchitectureRecommendationPriority.HIGH,
+            )
+
+        if issue.category == ArchitectureIssueCategory.UNSTABLE_DEPENDENCY:
+            return ArchitectureRecommendationSnapshot(
+                recommendation=(
+                    "Align with Stable Dependencies Principle: invert dependency so stable core "
+                    "does not depend on volatile implementations."
+                ),
+                priority=ArchitectureRecommendationPriority.MEDIUM,
+            )
+
+        if issue.category == ArchitectureIssueCategory.LAYER_VIOLATION:
+            return ArchitectureRecommendationSnapshot(
+                recommendation=(
+                    "Enforce strict directional layer boundaries: presentation and controllers "
+                    "must route domain operations through services rather than accessing data layers directly."
+                ),
+                priority=ArchitectureRecommendationPriority.HIGH,
+            )
+
         return None

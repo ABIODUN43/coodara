@@ -14,6 +14,13 @@ import { OrganizationDetailPage } from "@/pages/OrganizationDetailPage";
 import { RepositoriesPage } from "@/pages/RepositoriesPage";
 import { AnalysisPage } from "@/pages/AnalysisPage";
 import { ArchitecturePage } from "@/pages/ArchitecturePage";
+import { MemoryPage } from "@/pages/MemoryPage";
+import { HistoryPage } from "@/pages/HistoryPage";
+import { AIAssistantPage } from "@/pages/AIAssistantPage";
+import { RisksPage } from "@/pages/RisksPage";
+import { ReportsPage } from "@/pages/ReportsPage";
+import { RecommendationsPage } from "@/pages/RecommendationsPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 
 export const router = createBrowserRouter([
   {
@@ -69,21 +76,96 @@ export const router = createBrowserRouter([
             element: <ArchitecturePage />,
           },
 
-          /*
-           * Legacy compatibility route.
-           *
-           * Organization-scoped repository navigation should use:
-           * /dashboard/organizations/:orgId/repositories
-           */
           {
-            path: "repositories",
-            element: <RepositoriesPage />,
+            path: "organizations/:orgId/repositories/:repoId/memory",
+            element: <MemoryPage />,
+          },
+
+          {
+            path: "organizations/:orgId/repositories/:repoId/history",
+            element: <HistoryPage />,
+          },
+
+          {
+            path: "memory",
+            element: <MemoryPage />,
+          },
+
+          {
+            path: "organizations/:orgId/memory",
+            element: <MemoryPage />,
+          },
+
+          {
+            path: "history",
+            element: <HistoryPage />,
+          },
+
+          {
+            path: "organizations/:orgId/history",
+            element: <HistoryPage />,
+          },
+
+          {
+            path: "chat",
+            element: <AIAssistantPage />,
+          },
+
+          {
+            path: "organizations/:orgId/chat",
+            element: <AIAssistantPage />,
+          },
+
+          {
+            path: "ai-assistant",
+            element: <AIAssistantPage />,
+          },
+
+          {
+            path: "organizations/:orgId/ai-assistant",
+            element: <AIAssistantPage />,
+          },
+
+          {
+            path: "risks",
+            element: <RisksPage />,
+          },
+
+          {
+            path: "organizations/:orgId/risks",
+            element: <RisksPage />,
+          },
+
+          {
+            path: "reports",
+            element: <ReportsPage />,
+          },
+
+          {
+            path: "organizations/:orgId/reports",
+            element: <ReportsPage />,
+          },
+
+          {
+            path: "recommendations",
+            element: <RecommendationsPage />,
+          },
+
+          {
+            path: "organizations/:orgId/recommendations",
+            element: <RecommendationsPage />,
+          },
+
+          {
+            path: "settings",
+            element: <SettingsPage />,
+          },
+
+          {
+            path: "organizations/:orgId/settings",
+            element: <SettingsPage />,
           },
         ],
-      },
-      {
-        path: "*",
-        element: <div>404 Not Found</div>,
       },
     ],
   },

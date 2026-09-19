@@ -66,6 +66,7 @@ class AnalysisExecutionService:
         db: AsyncSession,
         orchestrator: AnalysisOrchestrator,
     ) -> None:
+        self.db = db
         self.analysis_repository = AnalysisRepository(db)
         self.repository_repository = RepositoryRepository(db)
         self.orchestrator = orchestrator
@@ -93,11 +94,13 @@ class AnalysisExecutionService:
         if job.status not in {
             AnalysisStatus.PENDING,
             AnalysisStatus.QUEUED,
+            AnalysisStatus.RUNNING,
         }:
             raise AnalysisExecutionError(
                 f"Analysis job {analysis_id} cannot be executed "
                 f"from status '{job.status.value}'.",
             )
+
 
         repository = await self.repository_repository.get_by_id(
             job.repository_id,
@@ -119,13 +122,18 @@ class AnalysisExecutionService:
             with RepositoryWorkspace(
                 clone_url=repository.clone_url,
                 branch=repository.default_branch,
+                repository_id=repository.id,
+                persistent=True,
             ) as workspace:
+                await self._update_progress(job, 35)
+
                 context = RepositoryContext(
                     root_path=workspace.repository_path,
                     repository_id=str(repository.id),
                 )
 
                 run = self.orchestrator.analyze(context)
+                await self._update_progress(job, 80)
 
                 analysis_snapshot = self._build_snapshot(
                     run.results,
@@ -137,19 +145,10 @@ class AnalysisExecutionService:
                 )
 
         except AnalysisExecutionError as exc:
-            """
-            Preserve known execution-level errors.
-
-            These errors already contain useful diagnostic information,
-            such as an invalid analyzer pipeline producing zero or
-            multiple AnalysisSnapshots.
-            """
-
             await self._mark_failed(
                 job,
                 self._safe_error_message(exc),
             )
-
             raise
 
         except (
@@ -158,33 +157,19 @@ class AnalysisExecutionService:
             ValueError,
             OSError,
         ) as exc:
-            """
-            Convert expected lower-level failures into the public
-            analysis execution error.
-            """
-
             await self._mark_failed(
                 job,
                 self._safe_error_message(exc),
             )
-
             raise AnalysisExecutionError(
                 "Repository analysis failed.",
             ) from exc
 
         except Exception as exc:
-            """
-            Protect the application boundary from unexpected failures.
-
-            Internal exception details are intentionally not exposed
-            through the public exception message.
-            """
-
             await self._mark_failed(
                 job,
                 "Unexpected analysis execution failure.",
             )
-
             raise AnalysisExecutionError(
                 "Unexpected analysis execution failure.",
             ) from exc
@@ -192,6 +177,7 @@ class AnalysisExecutionService:
         await self._mark_completed(job)
 
         return job
+
 
     async def _persist_snapshot(
         self,
@@ -206,15 +192,7 @@ class AnalysisExecutionService:
         keeping SQLAlchemy out of the analyzer layer.
         """
 
-        result = AnalysisResult(
-            analysis_job_id=job.id,
-            summary=snapshot.summary,
-        )
-
-        await self.analysis_repository.create_result(result)
-
         metrics = RepositoryMetrics(
-            analysis_result_id=result.id,
             loc=snapshot.metrics.loc,
             files=snapshot.metrics.files,
             classes=snapshot.metrics.classes,
@@ -223,25 +201,43 @@ class AnalysisExecutionService:
             maintainability=snapshot.metrics.maintainability,
         )
 
-        result.metrics = metrics
-
-        for technology in snapshot.technologies:
-            result.technologies.append(
-                DetectedTechnology(
-                    technology=technology.technology,
-                    version=technology.version,
-                    confidence_score=technology.confidence_score,
-                ),
+        technologies = [
+            DetectedTechnology(
+                technology=technology.technology,
+                version=technology.version,
+                confidence_score=technology.confidence_score,
             )
+            for technology in snapshot.technologies
+        ]
 
-        if snapshot.dependency_graph is not None:
-            result.dependency_graph = DependencyGraph(
+        dependency_graph = (
+            DependencyGraph(
                 graph_data=snapshot.dependency_graph.graph_data,
             )
+            if snapshot.dependency_graph is not None
+            else None
+        )
 
+        result = AnalysisResult(
+            analysis_job_id=job.id,
+            summary=snapshot.summary,
+            metrics=metrics,
+            technologies=technologies,
+            dependency_graph=dependency_graph,
+        )
+
+        existing_result = await self.analysis_repository.get_result_by_job(
+            analysis_job_id=job.id,
+        )
+        if existing_result is not None:
+            await self.analysis_repository.delete_result(existing_result)
+
+        await self.analysis_repository.create_result(result)
         await self.analysis_repository.update_result(result)
 
         return result
+
+
 
     @staticmethod
     def _build_snapshot(
@@ -268,6 +264,21 @@ class AnalysisExecutionService:
 
         return snapshots[0]
 
+    async def _update_progress(
+        self,
+        job: AnalysisJob,
+        progress: int,
+    ) -> None:
+        """
+        Update analysis job progress incrementally.
+        """
+        job.progress = min(99, max(job.progress, progress))
+        await self.analysis_repository.update(job)
+        try:
+            await self.db.commit()
+        except Exception:
+            pass
+
     async def _mark_running(
         self,
         job: AnalysisJob,
@@ -277,11 +288,15 @@ class AnalysisExecutionService:
         """
 
         job.status = AnalysisStatus.RUNNING
-        job.progress = 10
+        job.progress = 15
         job.started_at = datetime.now(timezone.utc)
         job.error_message = None
 
         await self.analysis_repository.update(job)
+        try:
+            await self.db.commit()
+        except Exception:
+            pass
 
     async def _mark_completed(
         self,
@@ -297,6 +312,10 @@ class AnalysisExecutionService:
         job.error_message = None
 
         await self.analysis_repository.update(job)
+        try:
+            await self.db.commit()
+        except Exception:
+            pass
 
     async def _mark_failed(
         self,
@@ -313,6 +332,10 @@ class AnalysisExecutionService:
         job.error_message = message
 
         await self.analysis_repository.update(job)
+        try:
+            await self.db.commit()
+        except Exception:
+            pass
 
     @staticmethod
     def _safe_error_message(

@@ -19,7 +19,8 @@ class CreateOrganizationRequest(BaseModel):
         max_length=255,
     )
 
-    slug: str = Field(
+    slug: str | None = Field(
+        default=None,
         min_length=2,
         max_length=255,
     )

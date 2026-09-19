@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import type { DashboardOverviewData } from "@/hooks/useDashboardOverview";
 
 interface Hotspot {
   name: string;
@@ -8,29 +9,17 @@ interface Hotspot {
   band: "good" | "warn" | "risk";
 }
 
+interface Props {
+  data?: DashboardOverviewData;
+}
+
 const BAND = {
   good: { c: "var(--cd-good)", label: "Healthy" },
   warn: { c: "var(--cd-warn)", label: "Warning" },
   risk: { c: "var(--cd-risk)", label: "Alert" },
 };
 
-const hotspots: Hotspot[] = [
-  { name: "payment-service", x: 88, y: 82, r: 22, band: "risk" },
-  { name: "notification-service", x: 70, y: 60, r: 19, band: "warn" },
-  { name: "auth-service", x: 76, y: 74, r: 16, band: "risk" },
-  { name: "api-gateway", x: 52, y: 40, r: 13, band: "warn" },
-  { name: "backend-api", x: 30, y: 28, r: 11, band: "good" },
-  { name: "frontend-app", x: 18, y: 14, r: 10, band: "good" },
-  { name: "analytics-service", x: 24, y: 20, r: 9, band: "good" },
-];
-
-const healthDist = [
-  { label: "Healthy", band: "good" as const, count: 23 },
-  { label: "Warning", band: "warn" as const, count: 9 },
-  { label: "Alert", band: "risk" as const, count: 5 },
-];
-
-export function CodeHealthHotspots() {
+export function CodeHealthHotspots({ data }: Props) {
   const w = 560;
   const h = 280;
   const padL = 48;
@@ -39,9 +28,43 @@ export function CodeHealthHotspots() {
   const padB = 40;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
-  const totalServices = healthDist.reduce((s, hh) => s + hh.count, 0);
 
-  const LABEL_MIN_R = 13;
+  const repos = data?.repoData ?? [];
+  const hasRealData = repos.length > 0;
+
+  const hotspots: Hotspot[] = hasRealData
+    ? repos.map((item, idx) => {
+        const loc = item.result?.metrics?.loc || 1000;
+        const funcs = item.result?.metrics?.functions || 20;
+        const x = Math.min(92, Math.max(15, (loc / 10000) * 80 + 15));
+        const y = Math.min(90, Math.max(15, (funcs / 300) * 80 + 15));
+        const r = Math.min(24, Math.max(10, Math.sqrt(loc) / 4));
+        const health = item.result?.metrics?.maintainability ?? 85;
+        const band: "good" | "warn" | "risk" =
+          health >= 80 ? "good" : health >= 60 ? "warn" : "risk";
+
+        return {
+          name: item.repo.name,
+          x: Math.round(x + ((idx * 5) % 15)),
+          y: Math.round(y),
+          r: Math.round(r),
+          band,
+        };
+      })
+    : [];
+
+  const goodCount = hotspots.filter((h) => h.band === "good").length;
+  const warnCount = hotspots.filter((h) => h.band === "warn").length;
+  const riskCount = hotspots.filter((h) => h.band === "risk").length;
+
+  const healthDist = [
+    { label: "Healthy", band: "good" as const, count: goodCount },
+    { label: "Warning", band: "warn" as const, count: warnCount },
+    { label: "Alert", band: "risk" as const, count: riskCount },
+  ];
+
+  const totalServices = healthDist.reduce((s, hh) => s + hh.count, 0);
+  const LABEL_MIN_R = 10;
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_1fr]">
@@ -84,7 +107,19 @@ export function CodeHealthHotspots() {
             <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="var(--cd-border)" strokeWidth={1.2} />
             <line x1={padL} y1={padT} x2={padL} y2={h - padB} stroke="var(--cd-border)" strokeWidth={1.2} />
 
-            {/* Bubbles first, labels in a second pass on top */}
+            {hotspots.length === 0 ? (
+              <text
+                x={(padL + w - padR) / 2}
+                y={(padT + h - padB) / 2}
+                textAnchor="middle"
+                fontSize={12}
+                fill="var(--cd-ink-faint)"
+              >
+                No repository hotspot metrics available
+              </text>
+            ) : null}
+
+            {/* Bubbles */}
             {hotspots.map((pt) => {
               const cx = padL + (pt.x / 100) * innerW;
               const cy = padT + innerH - (pt.y / 100) * innerH;
@@ -104,7 +139,7 @@ export function CodeHealthHotspots() {
                 const cy = padT + innerH - (pt.y / 100) * innerH;
                 const labelX = cx - pt.r - 6;
                 const labelY = Math.max(cy - pt.r * 0.4, padT + 6);
-                const approxWidth = pt.name.length * 5.6 + 10;
+                const approxWidth = pt.name.length * 6 + 10;
 
                 return (
                   <g key={`label-${pt.name}`}>
@@ -138,7 +173,7 @@ export function CodeHealthHotspots() {
               fontSize={10.5}
               fill="var(--cd-ink-faint)"
             >
-              Change frequency →
+              LOC / Size Scale →
             </text>
             <text
               x={16}
@@ -148,7 +183,7 @@ export function CodeHealthHotspots() {
               fill="var(--cd-ink-faint)"
               transform={`rotate(-90 16 ${(padT + h - padB) / 2})`}
             >
-              Complexity →
+              Function Complexity →
             </text>
           </svg>
         </div>
@@ -163,7 +198,7 @@ export function CodeHealthHotspots() {
 
         <div className="flex flex-col gap-3.5 p-4 sm:p-5">
           {healthDist.map((hh) => {
-            const pct = Math.round((hh.count / totalServices) * 100);
+            const pct = totalServices > 0 ? Math.round((hh.count / totalServices) * 100) : 0;
             return (
               <div key={hh.label} className="flex items-center gap-2.5">
                 <span className="w-16 flex-shrink-0 text-[12px] font-medium text-[var(--cd-ink)]">

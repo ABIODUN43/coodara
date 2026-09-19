@@ -262,3 +262,51 @@ def test_dependency_analyzer_is_deterministic(
 
     assert first == second
     assert first.graph_data == second.graph_data
+
+
+def test_dependency_analyzer_resolves_internal_symbols(
+    tmp_path: Path,
+) -> None:
+    # 1. Python resolution
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    services_dir = app_dir / "services"
+    services_dir.mkdir()
+
+    (services_dir / "order.py").write_text("class Order: pass\n", encoding="utf-8")
+    (app_dir / "controller.py").write_text(
+        "from app.services.order import Order\n"
+        "import external_pkg\n",
+        encoding="utf-8",
+    )
+
+    # 2. Java FQCN resolution
+    java_dir = tmp_path / "src" / "main" / "java" / "com" / "example"
+    java_dir.mkdir(parents=True)
+    (java_dir / "User.java").write_text(
+        "package com.example;\npublic class User {}\n",
+        encoding="utf-8",
+    )
+    (java_dir / "UserService.java").write_text(
+        "package com.example;\nimport com.example.User;\nimport org.slf4j.Logger;\npublic class UserService {}\n",
+        encoding="utf-8",
+    )
+
+    result = DependencyAnalyzer().analyze(_context(tmp_path))
+    graph = _graph(result)
+
+    edge_map = {(e["source"], e["target"]) for e in graph["edges"]}
+
+    # Verify internal Python import resolved to internal relative file path
+    assert ("app/controller.py", "app/services/order.py") in edge_map
+    assert ("app/controller.py", "external_pkg") in edge_map
+
+    # Verify internal Java import resolved to internal relative file path
+    assert (
+        "src/main/java/com/example/UserService.java",
+        "src/main/java/com/example/User.java",
+    ) in edge_map
+    assert (
+        "src/main/java/com/example/UserService.java",
+        "org.slf4j.Logger",
+    ) in edge_map

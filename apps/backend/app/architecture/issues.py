@@ -11,7 +11,9 @@ perform database access, HTTP handling, or AI inference.
 from __future__ import annotations
 
 from app.analyzers.models import RepositoryMetricsSnapshot
+from app.architecture.cycles import TarjanCycleDetector
 from app.architecture.graph import ArchitectureGraph
+from app.architecture.metrics import RobertMartinMetricsEngine
 from app.architecture.models import (
     ArchitectureIssueCategory,
     ArchitectureIssueSeverity,
@@ -42,6 +44,15 @@ class ArchitectureIssueDetector:
     # Aggregate repository source-file threshold.
     LARGE_REPOSITORY_THRESHOLD = 300
 
+    def __init__(
+        self,
+        *,
+        cycle_detector: TarjanCycleDetector | None = None,
+        metrics_engine: RobertMartinMetricsEngine | None = None,
+    ) -> None:
+        self._cycle_detector = cycle_detector or TarjanCycleDetector()
+        self._metrics_engine = metrics_engine or RobertMartinMetricsEngine()
+
     def detect(
         self,
         *,
@@ -55,7 +66,10 @@ class ArchitectureIssueDetector:
         """
 
         issues = [
+            *self._detect_circular_dependencies(graph),
             *self._detect_dependency_hotspots(graph),
+            *self._detect_hub_modules(graph),
+            *self._detect_unstable_dependencies(graph),
             *self._detect_complexity_hotspot(metrics),
             *self._detect_large_repository(metrics),
         ]
@@ -81,6 +95,87 @@ class ArchitectureIssueDetector:
             issue.description,
         )
 
+    def _detect_circular_dependencies(
+        self,
+        graph: ArchitectureGraph,
+    ) -> list[ArchitectureIssueSnapshot]:
+        """Detect circular dependency loops using Tarjan's algorithm."""
+        node_ids = [n.id for n in graph.nodes]
+        edge_pairs = [(e.source, e.target) for e in graph.edges]
+        cycles = self._cycle_detector.detect_cycles(
+            node_ids,
+            edge_pairs,
+            max_total_cycles=50,
+            max_cycles_per_scc=3,
+        )
+
+        issues: list[ArchitectureIssueSnapshot] = []
+        for cycle in cycles[:50]:
+            path_str = " -> ".join(f"'{p}'" for p in cycle.path)
+            severity = (
+                ArchitectureIssueSeverity.CRITICAL
+                if cycle.length <= 2
+                else ArchitectureIssueSeverity.HIGH
+            )
+            issues.append(
+                ArchitectureIssueSnapshot(
+                    severity=severity,
+                    category=ArchitectureIssueCategory.CIRCULAR_DEPENDENCY,
+                    description=f"Circular dependency detected: {path_str}.",
+                )
+            )
+        return issues
+
+    def _detect_hub_modules(
+        self,
+        graph: ArchitectureGraph,
+    ) -> list[ArchitectureIssueSnapshot]:
+        """Detect hub modules with high incoming and outgoing couplings."""
+        node_ids = [n.id for n in graph.nodes]
+        edge_pairs = [(e.source, e.target) for e in graph.edges]
+        module_metrics = self._metrics_engine.compute_metrics(node_ids, edge_pairs)
+
+        issues: list[ArchitectureIssueSnapshot] = []
+        hub_modules = [m for m in module_metrics.values() if m.is_hub]
+        hub_modules.sort(key=lambda m: (m.ca + m.ce), reverse=True)
+
+        for m in hub_modules[:50]:
+            issues.append(
+                ArchitectureIssueSnapshot(
+                    severity=ArchitectureIssueSeverity.HIGH,
+                    category=ArchitectureIssueCategory.HUB_MODULE,
+                    description=(
+                        f"Architectural Hub: Module '{m.node_id}' has high afferent "
+                        f"coupling (Ca={m.ca}) and high efferent coupling (Ce={m.ce})."
+                    ),
+                )
+            )
+        return issues
+
+    def _detect_unstable_dependencies(
+        self,
+        graph: ArchitectureGraph,
+    ) -> list[ArchitectureIssueSnapshot]:
+        """Detect Stable Dependencies Principle violations."""
+        node_ids = [n.id for n in graph.nodes]
+        edge_pairs = [(e.source, e.target) for e in graph.edges]
+        module_metrics = self._metrics_engine.compute_metrics(node_ids, edge_pairs)
+        violations = self._metrics_engine.detect_unstable_dependencies(module_metrics, edge_pairs)
+
+        issues: list[ArchitectureIssueSnapshot] = []
+        for v in violations[:20]:
+            issues.append(
+                ArchitectureIssueSnapshot(
+                    severity=ArchitectureIssueSeverity.MEDIUM,
+                    category=ArchitectureIssueCategory.UNSTABLE_DEPENDENCY,
+                    description=(
+                        f"Unstable Dependency: Stable module '{v.source}' (I={v.source_instability:.2f}) "
+                        f"depends on unstable module '{v.target}' (I={v.target_instability:.2f})."
+                    ),
+                )
+            )
+        return issues
+
     def _detect_dependency_hotspots(
         self,
         graph: ArchitectureGraph,
@@ -97,35 +192,40 @@ class ArchitectureIssueDetector:
             -> CRITICAL severity / DEPENDENCY_HOTSPOT
         """
 
-        issues: list[ArchitectureIssueSnapshot] = []
+        outgoing_counts: dict[str, int] = {}
+        for edge in graph.edges:
+            outgoing_counts[edge.source] = outgoing_counts.get(edge.source, 0) + 1
+
+        hotspots: list[tuple[str, int]] = []
 
         for node in graph.nodes:
-            dependency_count = graph.outgoing_count(node.id)
+            dependency_count = outgoing_counts.get(node.id, 0)
+            if dependency_count >= self.DEPENDENCY_HOTSPOT_THRESHOLD:
+                hotspots.append((node.id, dependency_count))
 
-            if dependency_count >= (
-                self.CRITICAL_DEPENDENCY_HOTSPOT_THRESHOLD
-            ):
+        # Sort by dependency concentration descending
+        hotspots.sort(key=lambda item: item[1], reverse=True)
+
+        issues: list[ArchitectureIssueSnapshot] = []
+        for node_id, dependency_count in hotspots[:50]:
+            if dependency_count >= self.CRITICAL_DEPENDENCY_HOTSPOT_THRESHOLD:
                 issues.append(
                     ArchitectureIssueSnapshot(
                         severity=ArchitectureIssueSeverity.CRITICAL,
-                        category=(
-                            ArchitectureIssueCategory
-                            .DEPENDENCY_HOTSPOT
-                        ),
+                        category=ArchitectureIssueCategory.DEPENDENCY_HOTSPOT,
                         description=(
-                            f"Module '{node.id}' has "
+                            f"Module '{node_id}' has "
                             f"{dependency_count} outgoing dependencies."
                         ),
                     )
                 )
-
-            elif dependency_count >= self.DEPENDENCY_HOTSPOT_THRESHOLD:
+            else:
                 issues.append(
                     ArchitectureIssueSnapshot(
                         severity=ArchitectureIssueSeverity.HIGH,
                         category=ArchitectureIssueCategory.HIGH_COUPLING,
                         description=(
-                            f"Module '{node.id}' has "
+                            f"Module '{node_id}' has "
                             f"{dependency_count} outgoing dependencies."
                         ),
                     )

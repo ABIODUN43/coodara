@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Kbd,
   Drawer,
@@ -36,53 +37,7 @@ interface Notification {
   read: boolean;
 }
 
-const initialNotifications: Notification[] = [
-  {
-    id: "1",
-    title: "Analysis completed",
-    detail:
-      "backend-api architecture score improved to 8.4",
-    time: "10:42 AM",
-    tag: "good",
-    read: false,
-  },
-  {
-    id: "2",
-    title: "Circular dependency detected",
-    detail:
-      "auth-service ↔ user-service",
-    time: "09:15 AM",
-    tag: "risk",
-    read: false,
-  },
-  {
-    id: "3",
-    title: "Coupling increasing",
-    detail:
-      "payment-service ↔ billing-service, up 22% this month",
-    time: "Yesterday",
-    tag: "warn",
-    read: false,
-  },
-  {
-    id: "4",
-    title: "New repository imported",
-    detail:
-      "analytics-service added to Acme Engineering",
-    time: "Yesterday",
-    tag: "good",
-    read: true,
-  },
-  {
-    id: "5",
-    title: "Service size threshold crossed",
-    detail:
-      "notification-service exceeded 14K lines",
-    time: "Jul 22",
-    tag: "warn",
-    read: true,
-  },
-];
+import { useDashboardOverview } from "@/hooks/useDashboardOverview";
 
 const tagColor: Record<
   Notification["tag"],
@@ -100,7 +55,19 @@ interface TopNavbarProps {
 export function TopNavbar({
   onOpenSidebar,
 }: TopNavbarProps) {
+  const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const dashboardData = useDashboardOverview();
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/login");
+    } catch {
+      navigate("/login");
+    }
+  };
 
   const {
     action,
@@ -113,39 +80,28 @@ export function TopNavbar({
   ] = useState(false);
 
   const [
-    notifications,
-    setNotifications,
-  ] = useState(initialNotifications);
-
-  const [
     selectedNotif,
     setSelectedNotif,
   ] = useState<Notification | null>(null);
+
+  const notifications: Notification[] = (dashboardData.allIssues || []).slice(0, 6).map((item, idx) => ({
+    id: `notif-${item.issue.id || idx}`,
+    title: item.issue.title || "Architectural Risk Detected",
+    detail: `${item.repoName}: ${item.issue.description}`,
+    time: "Live telemetry",
+    tag: (item.issue.severity === "critical" ? "risk" : "warn") as Notification["tag"],
+    read: readIds.has(`notif-${item.issue.id || idx}`),
+  }));
 
   function openNotification(
     notification: Notification,
   ) {
     setSelectedNotif(notification);
-
-    setNotifications((previous) =>
-      previous.map((item) =>
-        item.id === notification.id
-          ? {
-              ...item,
-              read: true,
-            }
-          : item,
-      ),
-    );
+    setReadIds((prev) => new Set([...prev, notification.id]));
   }
 
   function markAllRead() {
-    setNotifications((previous) =>
-      previous.map((item) => ({
-        ...item,
-        read: true,
-      })),
-    );
+    setReadIds(new Set(notifications.map((n) => n.id)));
   }
 
   function handleNotifOpenChange(
@@ -433,7 +389,7 @@ export function TopNavbar({
               id="logout"
               textValue="Logout"
               variant="danger"
-              onAction={logout}
+              onAction={handleLogout}
               className="cursor-pointer"
             >
               <div className="flex w-full items-center justify-between gap-2">

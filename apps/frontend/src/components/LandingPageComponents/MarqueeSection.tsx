@@ -1,13 +1,29 @@
+import {
+  SiGithub,
+  SiPostgresql,
+  SiDocker,
+  SiStripe,
+  SiDatadog,
+  SiVercel,
+  SiLinear,
+  SiSupabase,
+  SiKubernetes,
+  SiRedis,
+} from "react-icons/si";
+import { FaAws } from "react-icons/fa6";
+
 const LOGOS = [
-  { name: "GitHub", src: "https://cdn.simpleicons.org/github/white" },
-  { name: "Stripe", src: "https://cdn.simpleicons.org/stripe/white" },
-  { name: "Datadog", src: "https://cdn.simpleicons.org/datadog/white" },
-  { name: "Vercel", src: "https://cdn.simpleicons.org/vercel/white" },
-  { name: "Linear", src: "https://cdn.simpleicons.org/linear/white" },
-  { name: "Supabase", src: "https://cdn.simpleicons.org/supabase/white" },
-  { name: "PostgreSQL", src: "https://cdn.simpleicons.org/postgresql/white" },
-  { name: "Docker", src: "https://cdn.simpleicons.org/docker/white" },
-  { name: "AWS", src: "/src/assets/images/aws.jpg" },
+  { name: "GitHub", Icon: SiGithub, color: "text-white" },
+  { name: "PostgreSQL", Icon: SiPostgresql, color: "text-[#336791]" },
+  { name: "Docker", Icon: SiDocker, color: "text-[#2496ED]" },
+  { name: "AWS", Icon: FaAws, color: "text-[#FF9900]" },
+  { name: "Stripe", Icon: SiStripe, color: "text-[#635BFF]" },
+  { name: "Datadog", Icon: SiDatadog, color: "text-[#632CA6]" },
+  { name: "Vercel", Icon: SiVercel, color: "text-white" },
+  { name: "Linear", Icon: SiLinear, color: "text-[#5E6AD2]" },
+  { name: "Supabase", Icon: SiSupabase, color: "text-[#3ECF8E]" },
+  { name: "Kubernetes", Icon: SiKubernetes, color: "text-[#326CE5]" },
+  { name: "Redis", Icon: SiRedis, color: "text-[#DC382D]" },
 ];
 
 export function MarqueeSection() {
@@ -30,22 +46,23 @@ export function MarqueeSection() {
       </div>
 
       <div className="relative flex overflow-x-hidden py-6">
-        <div className="animate-marquee flex items-center gap-12 whitespace-nowrap md:gap-24">
-          {[...LOGOS, ...LOGOS].map((logo, i) => (
-            <div
-              key={`${logo.name}-${i}`}
-              className="flex items-center gap-3 cursor-pointer opacity-60 transition-all duration-300 hover:scale-110 hover:opacity-100"
-            >
-              <img
-                alt={logo.name}
-                src={logo.src}
-                className="h-8 w-auto md:h-10"
-              />
-              <span className="text-sm font-medium text-white md:text-base">
-                {logo.name}
-              </span>
-            </div>
-          ))}
+        <div className="animate-marquee flex items-center gap-8 whitespace-nowrap md:gap-14">
+          {[...LOGOS, ...LOGOS].map((logo, i) => {
+            const Icon = logo.Icon;
+            return (
+              <div
+                key={`${logo.name}-${i}`}
+                className="group flex items-center gap-3 cursor-pointer opacity-70 transition-all duration-300 hover:scale-105 hover:opacity-100"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/90 border border-slate-800/80 p-2.5 text-slate-300 shadow-sm transition-all duration-200 group-hover:border-slate-700 group-hover:bg-slate-800">
+                  <Icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
+                </div>
+                <span className="text-sm font-medium text-slate-300 transition-colors group-hover:text-white md:text-base">
+                  {logo.name}
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-slate-950 to-transparent sm:w-32" />
@@ -58,7 +75,7 @@ export function MarqueeSection() {
           100% { transform: translateX(-50%); }
         }
         .animate-marquee {
-          animation: marquee 30s linear infinite;
+          animation: marquee 35s linear infinite;
         }
         .animate-marquee:hover {
           animation-play-state: paused;

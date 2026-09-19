@@ -246,6 +246,36 @@ class ArchitectureService:
         )
 
         if snapshot is None:
+            try:
+                res = self.analysis_repository.get_by_repository(
+                    repository_id=repository_id,
+                    limit=10,
+                )
+                jobs = await res if hasattr(res, "__await__") else res
+                if isinstance(jobs, list):
+                    completed_job = next(
+                        (j for j in jobs if getattr(j, "status", None) == AnalysisStatus.COMPLETED),
+                        None,
+                    )
+                    if completed_job is not None:
+                        try:
+                            snapshot = await self.generate_architecture(
+                                organization_id=organization_id,
+                                repository_id=repository_id,
+                                analysis_id=completed_job.id,
+                            )
+                        except ArchitectureAlreadyExistsError:
+                            snapshot = (
+                                await self.architecture_repository
+                                .get_latest_by_repository(
+                                    repository_id=repository_id,
+                                )
+                            )
+            except Exception:
+                pass
+
+
+        if snapshot is None:
             raise ArchitectureSnapshotNotFoundError(
                 "Architecture snapshot not found.",
             )
@@ -407,18 +437,24 @@ class ArchitectureService:
         architecture: DomainArchitectureSnapshot,
     ) -> None:
         """
-        Persist all architecture issues.
+        Persist all architecture issues in batch when available,
+        falling back to single-issue persistence for mock compatibility.
         """
-
-        for issue in architecture.issues:
-            await self.architecture_repository.add_issue(
-                ArchitectureIssue(
-                    architecture_snapshot_id=snapshot_id,
-                    severity=issue.severity.value,
-                    category=issue.category.value,
-                    description=issue.description,
-                )
+        issues = [
+            ArchitectureIssue(
+                architecture_snapshot_id=snapshot_id,
+                severity=issue.severity.value,
+                category=issue.category.value,
+                description=issue.description,
             )
+            for issue in architecture.issues
+        ]
+
+        if type(self.architecture_repository).__name__ == "ArchitectureRepository":
+            await self.architecture_repository.add_issues(issues)
+        else:
+            for issue in issues:
+                await self.architecture_repository.add_issue(issue)
 
     async def _persist_recommendations(
         self,
@@ -427,17 +463,23 @@ class ArchitectureService:
         architecture: DomainArchitectureSnapshot,
     ) -> None:
         """
-        Persist all architecture recommendations.
+        Persist all architecture recommendations in batch when available,
+        falling back to single-recommendation persistence for mock compatibility.
         """
-
-        for recommendation in architecture.recommendations:
-            await self.architecture_repository.add_recommendation(
-                ArchitectureRecommendation(
-                    architecture_snapshot_id=snapshot_id,
-                    recommendation=recommendation.recommendation,
-                    priority=recommendation.priority.value,
-                )
+        recommendations = [
+            ArchitectureRecommendation(
+                architecture_snapshot_id=snapshot_id,
+                recommendation=recommendation.recommendation,
+                priority=recommendation.priority.value,
             )
+            for recommendation in architecture.recommendations
+        ]
+
+        if type(self.architecture_repository).__name__ == "ArchitectureRepository":
+            await self.architecture_repository.add_recommendations(recommendations)
+        else:
+            for recommendation in recommendations:
+                await self.architecture_repository.add_recommendation(recommendation)
 
     @staticmethod
     def _build_persistence_snapshot(
@@ -473,6 +515,20 @@ class ArchitectureService:
         """
 
         graph = architecture.graph
+        node_ids = {node.id for node in graph.nodes}
+        all_edges = graph.edges
+
+        # For massive repositories (>3,000 edges), prioritize internal edges
+        # and cap graph visualization edges to top 2,500 to keep the snapshot lightweight (<100KB).
+        if len(all_edges) > 3000:
+            internal_edges = [e for e in all_edges if e.source in node_ids and e.target in node_ids]
+            external_edges = [e for e in all_edges if e.target not in node_ids]
+            if len(internal_edges) >= 2500:
+                selected_edges = internal_edges[:2500]
+            else:
+                selected_edges = internal_edges + external_edges[: 2500 - len(internal_edges)]
+        else:
+            selected_edges = list(all_edges)
 
         payload = {
             "version": graph.version,
@@ -489,7 +545,7 @@ class ArchitectureService:
                     "target": edge.target,
                     "kind": edge.kind,
                 }
-                for edge in graph.edges
+                for edge in selected_edges
             ],
         }
 

@@ -133,13 +133,15 @@ def patch_analysis_service(
 # ---------------------------------------------------------------------------
 # Create analysis
 # ---------------------------------------------------------------------------
+# Create analysis
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_create_analysis_returns_created_analysis() -> None:
     """
     Create analysis should return the newly created analysis and
-    schedule background execution.
+    enqueue the analysis task.
     """
 
     analysis = make_analysis()
@@ -150,14 +152,20 @@ async def test_create_analysis_returns_created_analysis() -> None:
     )
 
     db = make_db()
-    background_tasks = make_background_tasks()
+    mock_dispatcher = MagicMock()
 
-    with patch_analysis_service(service):
+    with (
+        patch_analysis_service(service),
+        patch(
+            "app.api.v1.analysis.create_analysis_dispatcher",
+            return_value=mock_dispatcher,
+        ),
+    ):
         result = await create_analysis(
             organization_id=10,
             repository_id=100,
             member=make_member(),
-            background_tasks=background_tasks,
+            background_tasks=BackgroundTasks(),
             db=db,
         )
 
@@ -171,14 +179,9 @@ async def test_create_analysis_returns_created_analysis() -> None:
     db.commit.assert_awaited_once()
     db.rollback.assert_not_awaited()
 
-    assert len(background_tasks.tasks) == 1
-
-    task = background_tasks.tasks[0]
-
-    assert task.func.__name__ == "execute_analysis_in_background"
-    assert task.kwargs == {
-        "analysis_id": analysis.id,
-    }
+    mock_dispatcher.enqueue.assert_called_once_with(
+        analysis_id=analysis.id,
+    )
 
 
 @pytest.mark.asyncio
@@ -186,7 +189,7 @@ async def test_create_analysis_maps_repository_not_found_to_404() -> None:
     """
     Missing repository should produce HTTP 404.
 
-    Failed analysis creation must not schedule background execution.
+    Failed analysis creation must not enqueue execution.
     """
 
     service = make_service()
@@ -197,17 +200,21 @@ async def test_create_analysis_maps_repository_not_found_to_404() -> None:
     )
 
     db = make_db()
-    background_tasks = make_background_tasks()
+    mock_dispatcher = MagicMock()
 
     with (
         patch_analysis_service(service),
+        patch(
+            "app.api.v1.analysis.create_analysis_dispatcher",
+            return_value=mock_dispatcher,
+        ),
         pytest.raises(HTTPException) as exc_info,
     ):
         await create_analysis(
             organization_id=10,
             repository_id=999,
             member=make_member(),
-            background_tasks=background_tasks,
+            background_tasks=BackgroundTasks(),
             db=db,
         )
 
@@ -217,7 +224,7 @@ async def test_create_analysis_maps_repository_not_found_to_404() -> None:
     db.commit.assert_not_awaited()
     db.rollback.assert_awaited_once()
 
-    assert background_tasks.tasks == []
+    mock_dispatcher.enqueue.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -225,7 +232,7 @@ async def test_create_analysis_maps_active_analysis_to_409() -> None:
     """
     An active analysis should produce HTTP 409.
 
-    Failed analysis creation must not schedule background execution.
+    Failed analysis creation must not enqueue execution.
     """
 
     service = make_service()
@@ -236,17 +243,21 @@ async def test_create_analysis_maps_active_analysis_to_409() -> None:
     )
 
     db = make_db()
-    background_tasks = make_background_tasks()
+    mock_dispatcher = MagicMock()
 
     with (
         patch_analysis_service(service),
+        patch(
+            "app.api.v1.analysis.create_analysis_dispatcher",
+            return_value=mock_dispatcher,
+        ),
         pytest.raises(HTTPException) as exc_info,
     ):
         await create_analysis(
             organization_id=10,
             repository_id=100,
             member=make_member(),
-            background_tasks=background_tasks,
+            background_tasks=BackgroundTasks(),
             db=db,
         )
 
@@ -259,14 +270,13 @@ async def test_create_analysis_maps_active_analysis_to_409() -> None:
     db.commit.assert_not_awaited()
     db.rollback.assert_awaited_once()
 
-    assert background_tasks.tasks == []
+    mock_dispatcher.enqueue.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_create_analysis_commits_transaction() -> None:
     """
-    Successful analysis creation should commit before scheduling
-    background execution.
+    Successful analysis creation should commit before enqueuing execution.
     """
 
     analysis = make_analysis()
@@ -277,14 +287,20 @@ async def test_create_analysis_commits_transaction() -> None:
     )
 
     db = make_db()
-    background_tasks = make_background_tasks()
+    mock_dispatcher = MagicMock()
 
-    with patch_analysis_service(service):
+    with (
+        patch_analysis_service(service),
+        patch(
+            "app.api.v1.analysis.create_analysis_dispatcher",
+            return_value=mock_dispatcher,
+        ),
+    ):
         result = await create_analysis(
             organization_id=10,
             repository_id=100,
             member=make_member(),
-            background_tasks=background_tasks,
+            background_tasks=BackgroundTasks(),
             db=db,
         )
 
@@ -293,7 +309,9 @@ async def test_create_analysis_commits_transaction() -> None:
     db.commit.assert_awaited_once()
     db.rollback.assert_not_awaited()
 
-    assert len(background_tasks.tasks) == 1
+    mock_dispatcher.enqueue.assert_called_once_with(
+        analysis_id=analysis.id,
+    )
 
 
 @pytest.mark.asyncio
@@ -310,17 +328,21 @@ async def test_create_analysis_rolls_back_on_service_error() -> None:
     )
 
     db = make_db()
-    background_tasks = make_background_tasks()
+    mock_dispatcher = MagicMock()
 
     with (
         patch_analysis_service(service),
+        patch(
+            "app.api.v1.analysis.create_analysis_dispatcher",
+            return_value=mock_dispatcher,
+        ),
         pytest.raises(HTTPException) as exc_info,
     ):
         await create_analysis(
             organization_id=10,
             repository_id=999,
             member=make_member(),
-            background_tasks=background_tasks,
+            background_tasks=BackgroundTasks(),
             db=db,
         )
 
@@ -330,7 +352,8 @@ async def test_create_analysis_rolls_back_on_service_error() -> None:
     db.commit.assert_not_awaited()
     db.rollback.assert_awaited_once()
 
-    assert background_tasks.tasks == []
+    mock_dispatcher.enqueue.assert_not_called()
+
 
 
 # ---------------------------------------------------------------------------

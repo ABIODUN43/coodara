@@ -9,6 +9,7 @@ import {
   getCurrentUser,
   loginWithGithub,
   logout as logoutRequest,
+  demoLogin as demoLoginRequest,
 } from "@/api/auth";
 
 import type { GithubUser } from "@/types/auth";
@@ -67,6 +68,16 @@ export function AuthProvider({
     return Promise.resolve();
   }, []);
 
+  const demoLogin = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    try {
+      const demoUser = await demoLoginRequest();
+      setUser(demoUser);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const logout = useCallback(async (): Promise<void> => {
     try {
       await logoutRequest();
@@ -80,6 +91,7 @@ export function AuthProvider({
     isAuthenticated: user !== null,
     loading,
     login,
+    demoLogin,
     logout,
     refreshUser,
   };

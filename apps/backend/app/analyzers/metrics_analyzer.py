@@ -1,29 +1,20 @@
 """
 Repository metrics analyzer.
 
-This module contains deterministic, read-only analysis logic for
-repository-level source metrics.
-
-Responsibilities:
-- Discover supported source files.
-- Count source lines.
-- Count classes.
-- Count functions/methods.
-- Produce a RepositoryMetricsSnapshot.
-
-Non-responsibilities:
-- Database persistence.
-- GitHub API calls.
-- Repository cloning.
-- FastAPI concerns.
-- LLM/AI processing.
-- Mutating the analyzed repository.
+Analyzes deterministic repository-level source metrics:
+- Discovers supported source files safely.
+- Enforces file size and file count bounds.
+- Guards against symlink escapes and binary files.
+- Counts source lines, classes, and functions/methods via AST.
 """
 
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
+
+from app.core.config import settings
 
 from .context import RepositoryContext
 from .exceptions import AnalyzerExecutionError
@@ -33,10 +24,6 @@ from .models import RepositoryMetricsSnapshot
 class MetricsAnalyzer:
     """
     Analyze deterministic repository-level source metrics.
-
-    The analyzer is intentionally conservative. Unsupported or
-    unparseable source files do not cause the entire repository
-    analysis to fail; they are skipped.
     """
 
     name = "metrics"
@@ -44,6 +31,30 @@ class MetricsAnalyzer:
     _SUPPORTED_EXTENSIONS = frozenset(
         {
             ".py",
+            ".ts",
+            ".tsx",
+            ".js",
+            ".jsx",
+            ".mjs",
+            ".cjs",
+            ".go",
+            ".rs",
+            ".java",
+            ".scala",
+            ".sc",
+            ".cs",
+            ".cpp",
+            ".cc",
+            ".cxx",
+            ".c",
+            ".h",
+            ".hpp",
+            ".rb",
+            ".php",
+            ".swift",
+            ".kt",
+            ".kts",
+            ".sql",
         }
     )
 
@@ -61,10 +72,22 @@ class MetricsAnalyzer:
             ".pytest_cache",
             ".ruff_cache",
             ".tox",
+            ".nox",
             "dist",
             "build",
             "coverage",
             ".coverage",
+            ".next",
+            ".nuxt",
+            "target",
+            "vendor",
+            ".gradle",
+            "bin",
+            "obj",
+            "kafkatest",
+            "fixtures",
+            "test-fixtures",
+            "site-docs",
         }
     )
 
@@ -74,17 +97,7 @@ class MetricsAnalyzer:
     ) -> RepositoryMetricsSnapshot:
         """
         Analyze supported source files in the repository.
-
-        The repository is never modified.
-
-        Returns:
-            RepositoryMetricsSnapshot containing deterministic metrics.
-
-        Raises:
-            AnalyzerExecutionError:
-                If the repository cannot be traversed.
         """
-
         try:
             source_files = tuple(
                 self._iter_source_files(context.root_path)
@@ -100,9 +113,40 @@ class MetricsAnalyzer:
 
         for source_file in source_files:
             loc += self._count_lines(source_file)
+            ext = source_file.suffix.lower()
 
-            if source_file.suffix == ".py":
+            if ext == ".py":
                 class_count, function_count = self._analyze_python_file(
+                    source_file
+                )
+                classes += class_count
+                functions += function_count
+            elif ext in {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}:
+                class_count, function_count = self._analyze_js_ts_file(
+                    source_file
+                )
+                classes += class_count
+                functions += function_count
+            elif ext in {
+                ".java",
+                ".scala",
+                ".sc",
+                ".go",
+                ".rs",
+                ".cs",
+                ".cpp",
+                ".cc",
+                ".cxx",
+                ".c",
+                ".h",
+                ".hpp",
+                ".kt",
+                ".kts",
+                ".swift",
+                ".rb",
+                ".php",
+            }:
+                class_count, function_count = self._analyze_c_family_file(
                     source_file
                 )
                 classes += class_count
@@ -122,56 +166,50 @@ class MetricsAnalyzer:
         root_path: Path,
     ) -> list[Path]:
         """
-        Return supported source files below the repository root.
-
-        Ignored directories are excluded before recursion.
+        Return supported source files below the repository root safely and fast.
         """
-
+        resolved_root = root_path.resolve()
         source_files: list[Path] = []
+        max_file_size = settings.ANALYSIS_MAX_FILE_SIZE_BYTES
+        max_files_count = settings.ANALYSIS_MAX_FILES_COUNT
 
-        for path in root_path.rglob("*"):
-            if not path.is_file():
-                continue
+        for root, dirnames, filenames in os.walk(root_path):
+            # Prune ignored directories in-place to avoid wasting time traversing them
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in self._IGNORED_DIRECTORIES and not d.startswith(".")
+            ]
 
-            if self._is_ignored(path, root_path):
-                continue
+            for filename in filenames:
+                if len(source_files) >= max_files_count:
+                    break
 
-            if path.suffix.lower() not in self._SUPPORTED_EXTENSIONS:
-                continue
+                path = Path(root) / filename
+                if path.suffix.lower() not in self._SUPPORTED_EXTENSIONS:
+                    continue
 
-            source_files.append(path)
+                try:
+                    resolved_path = path.resolve()
+                    if not resolved_path.is_relative_to(resolved_root):
+                        continue
+                    if path.stat().st_size > max_file_size:
+                        continue
+                except (ValueError, OSError):
+                    continue
+
+                source_files.append(path)
+
+            if len(source_files) >= max_files_count:
+                break
 
         source_files.sort()
-
         return source_files
-
-    def _is_ignored(
-        self,
-        path: Path,
-        root_path: Path,
-    ) -> bool:
-        """
-        Determine whether a repository path belongs to an ignored tree.
-        """
-
-        try:
-            relative_path = path.relative_to(root_path)
-        except ValueError:
-            return True
-
-        return any(
-            part in self._IGNORED_DIRECTORIES
-            for part in relative_path.parts
-        )
 
     @staticmethod
     def _count_lines(path: Path) -> int:
         """
-        Count physical lines in a source file.
-
-        A physical line is counted exactly once, including blank lines.
+        Count physical lines in a source file safely.
         """
-
         try:
             with path.open(
                 "r",
@@ -179,40 +217,30 @@ class MetricsAnalyzer:
                 errors="replace",
             ) as source:
                 return sum(1 for _ in source)
-        except OSError as exc:
-            raise AnalyzerExecutionError(
-                f"Unable to read source file: {path}"
-            ) from exc
+        except (OSError, UnicodeError):
+            return 0
 
     @staticmethod
     def _analyze_python_file(
         path: Path,
     ) -> tuple[int, int]:
         """
-        Count classes and functions/methods in a Python source file.
-
-        AST parsing gives us structural information without executing
-        repository code.
+        Count classes and functions/methods in a Python source file using AST.
         """
-
         try:
             source = path.read_text(
                 encoding="utf-8",
                 errors="replace",
             )
-        except OSError as exc:
-            raise AnalyzerExecutionError(
-                f"Unable to read Python source file: {path}"
-            ) from exc
+        except OSError:
+            return 0, 0
 
         try:
             tree = ast.parse(
                 source,
                 filename=str(path),
             )
-        except SyntaxError:
-            # A malformed source file should not invalidate the entire
-            # repository analysis.
+        except (SyntaxError, ValueError, RecursionError):
             return 0, 0
 
         classes = 0
@@ -227,6 +255,82 @@ class MetricsAnalyzer:
                     ast.FunctionDef,
                     ast.AsyncFunctionDef,
                 ),
+            ):
+                functions += 1
+
+        return classes, functions
+
+    @staticmethod
+    def _analyze_js_ts_file(
+        path: Path,
+    ) -> tuple[int, int]:
+        """
+        Heuristic class and function counts for JS/TS source files.
+        """
+        try:
+            source = path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError:
+            return 0, 0
+
+        classes = 0
+        functions = 0
+
+        for line in source.splitlines():
+            s = line.strip()
+            if not s or s.startswith("//") or s.startswith("/*") or s.startswith("*"):
+                continue
+            if s.startswith("class ") or " class " in s:
+                classes += 1
+            elif (
+                s.startswith("function ")
+                or " function " in s
+                or "=>" in s
+                or s.startswith("async function ")
+            ):
+                functions += 1
+
+        return classes, functions
+
+    @staticmethod
+    def _analyze_c_family_file(
+        path: Path,
+    ) -> tuple[int, int]:
+        """
+        Heuristic class and function counts for Java, Scala, Go, Rust, C#, C/C++, Kotlin, Swift.
+        """
+        try:
+            source = path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError:
+            return 0, 0
+
+        classes = 0
+        functions = 0
+
+        for line in source.splitlines():
+            s = line.strip()
+            if not s or s.startswith("//") or s.startswith("/*") or s.startswith("*"):
+                continue
+            if (
+                s.startswith("class ") or " class " in s or
+                s.startswith("interface ") or " interface " in s or
+                s.startswith("trait ") or " trait " in s or
+                s.startswith("struct ") or " struct " in s or
+                s.startswith("enum ") or " enum " in s or
+                s.startswith("record ") or " record " in s or
+                s.startswith("type ") and " struct" in s
+            ):
+                classes += 1
+            elif (
+                s.startswith("def ") or " def " in s or
+                s.startswith("func ") or " func " in s or
+                s.startswith("fn ") or " fn " in s or
+                (s.startswith("public ") or s.startswith("private ") or s.startswith("protected ")) and "(" in s and ")" in s
             ):
                 functions += 1
 

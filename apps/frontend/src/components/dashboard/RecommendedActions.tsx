@@ -1,4 +1,9 @@
 import { Play } from "lucide-react";
+import type { DashboardOverviewData } from "@/hooks/useDashboardOverview";
+
+interface Props {
+  data?: DashboardOverviewData;
+}
 
 const BAND = {
   good: "var(--cd-good)",
@@ -6,44 +11,61 @@ const BAND = {
   risk: "var(--cd-risk)",
 };
 
-const actions = [
-  {
-    title: "Remove circular dependency",
-    priorityLabel: "High",
-    impactLevel: "High",
-    effort: "Medium",
-    expectedImpact: "Eliminate auth ↔ user cyclic risk",
-    fix: "Extract shared logic from auth-service and user-service into a new identity-core module.",
-    priority: "P0",
-    band: "risk" as const,
-  },
-  {
-    title: "Split notification-service",
-    priorityLabel: "Medium",
-    impactLevel: "Medium",
-    effort: "High",
-    expectedImpact: "Reduce service size by ~60%",
-    fix: "Break out email, SMS, and push channels into independently deployable services.",
-    priority: "P1",
-    band: "warn" as const,
-  },
-  {
-    title: "Reduce payment ↔ billing coupling",
-    priorityLabel: "High",
-    impactLevel: "High",
-    effort: "Medium",
-    expectedImpact: "Reduce coupling by 23%",
-    fix: "Introduce an event contract instead of direct synchronous calls.",
-    priority: "P0",
-    band: "risk" as const,
-  },
-];
+export function RecommendedActions({ data }: Props) {
+  const issues = data?.allIssues ?? [];
+  const repos = data?.repoData ?? [];
 
-export function RecommendedActions() {
+  const dynamicActions = issues.length > 0
+    ? issues.slice(0, 3).map((issue, idx) => ({
+        title: issue.issue.title,
+        priorityLabel: issue.issue.severity === "critical" ? "High" : "Medium",
+        impactLevel: issue.issue.severity === "critical" ? "High" : "Medium",
+        effort: "Medium",
+        expectedImpact: `Resolve structural risks in ${issue.repoName}`,
+        fix: issue.issue.description,
+        priority: `P${idx}`,
+        band: issue.issue.severity === "critical" ? ("risk" as const) : ("warn" as const),
+      }))
+    : repos.length > 0
+    ? [
+        {
+          title: "Optimize Architecture Boundaries",
+          priorityLabel: "Medium",
+          impactLevel: "Medium",
+          effort: "Low",
+          expectedImpact: "Ensure loose coupling between modules",
+          fix: `Maintain clear separation of concerns across ${repos.map((r) => r.repo.name).slice(0, 3).join(", ")}.`,
+          priority: "P1",
+          band: "good" as const,
+        },
+        {
+          title: "Module Maintainability Optimization",
+          priorityLabel: "Low",
+          impactLevel: "Medium",
+          effort: "Low",
+          expectedImpact: "Keep Cyclomatic Complexity within limits",
+          fix: "Continue periodic automated code intelligence scans on repository commits.",
+          priority: "P2",
+          band: "good" as const,
+        },
+      ]
+    : [
+        {
+          title: "Import & Analyze Repositories",
+          priorityLabel: "High",
+          impactLevel: "High",
+          effort: "Low",
+          expectedImpact: "Unlock real-time architecture intelligence",
+          fix: "Connect GitHub repositories to start continuous architecture inspection and health scoring.",
+          priority: "P0",
+          band: "warn" as const,
+        },
+      ];
+
   return (
     <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-[var(--cd-border)] bg-[var(--cd-border)] sm:grid-cols-2 lg:grid-cols-3">
-      {actions.map((a) => (
-        <div key={a.title} className="bg-[var(--cd-surface)] p-4">
+      {dynamicActions.map((a, i) => (
+        <div key={`${a.title}-${i}`} className="bg-[var(--cd-surface)] p-4">
           <div className="mb-2.5 flex items-center justify-between">
             <span
               className="rounded-md px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-white"

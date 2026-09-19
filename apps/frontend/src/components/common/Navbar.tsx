@@ -43,13 +43,15 @@ export function Navbar() {
           <div className="hidden items-center gap-4 md:flex">
             <Link
               to="/login"
-              className="text-sm font-medium text-zinc-500 transition-colors duration-[600ms] hover:text-black"
+              className="text-sm font-medium text-zinc-600 transition-colors duration-200 hover:text-black"
             >
               Login
             </Link>
-            <Button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition-colors duration-[600ms] hover:bg-zinc-800 cursor-pointer">
-              Get Started
-            </Button>
+            <Link to="/login">
+              <Button className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-zinc-800 cursor-pointer">
+                Get started
+              </Button>
+            </Link>
           </div>
 
           {/* Mobile menu toggle */}
@@ -85,7 +87,7 @@ export function Navbar() {
                   <a
                     key={link.href}
                     href={link.href}
-                    className="text-sm font-medium text-zinc-600 transition-colors duration-[600ms] hover:text-black"
+                    className="text-sm font-medium text-zinc-600 transition-colors duration-200 hover:text-black"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
                     {link.label}
@@ -100,14 +102,16 @@ export function Navbar() {
                 >
                   <Link
                     to="/login"
-                    className="text-sm font-medium text-zinc-600 transition-colors duration-[600ms] hover:text-black"
+                    className="text-sm font-medium text-zinc-600 transition-colors duration-200 hover:text-black"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
                     Login
                   </Link>
-                  <Button className="w-full rounded-lg bg-black text-sm font-medium text-white transition-colors duration-[600ms] hover:bg-zinc-800 cursor-pointer">
-                    Get Started
-                  </Button>
+                  <Link to="/login" className="w-full">
+                    <Button className="w-full rounded-lg bg-black text-sm font-semibold text-white transition-colors duration-200 hover:bg-zinc-800 cursor-pointer">
+                      Get started
+                    </Button>
+                  </Link>
                 </motion.div>
               </motion.div>
             </div>

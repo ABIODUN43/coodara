@@ -27,9 +27,10 @@ GitHub HTTP communication belongs to GitHubClient.
 
 from __future__ import annotations
 
+import logging
 from math import ceil
 from typing import Annotated
-
+from app.analysis.factory import create_analysis_dispatcher
 from app.api.dependencies import (
     GitHubAccessTokenDependency,
     OrganizationMemberDependency,
@@ -43,6 +44,7 @@ from app.schemas.repository import (
     RepositoryResponse,
     RepositoryUpdateRequest,
 )
+from app.services.analysis_service import AnalysisService
 from app.services.github_service import GitHubClient
 from app.services.repository_service import (
     GitHubRepositoryAccessError,
@@ -52,8 +54,10 @@ from app.services.repository_service import (
     RepositoryNotFoundError,
     RepositoryService,
 )
+from app.workers.analysis_tasks import _run_analysis_async
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Path,
@@ -62,6 +66,8 @@ from fastapi import (
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/organizations/{organization_id}/repositories",
@@ -77,7 +83,7 @@ router = APIRouter(
 def _create_repository_service(
     *,
     db: AsyncSession,
-    github_client: GitHubClient,
+    github_client: GitHubClient | None = None,
     github_access_token: str | None = None,
 ) -> RepositoryService:
     """
@@ -245,10 +251,11 @@ async def import_repository(
         GitHubClient,
         Depends(get_github_client),
     ],
+    background_tasks: BackgroundTasks = None,
     db: Annotated[
         AsyncSession,
         Depends(get_db),
-    ],
+    ] = None,
 ) -> RepositoryResponse:
     """
     Import an accessible GitHub repository into an organization.
@@ -272,6 +279,27 @@ async def import_repository(
         )
 
         await db.commit()
+
+        # Auto-trigger initial analysis immediately in background
+        try:
+            analysis_service = AnalysisService(db)
+            analysis = await analysis_service.create_analysis(
+                organization_id=organization_id,
+                repository_id=repository.id,
+            )
+            await db.commit()
+
+            dispatcher = create_analysis_dispatcher(db)
+            task_id = dispatcher.enqueue(analysis_id=analysis.id)
+
+            if not task_id and background_tasks is not None:
+                background_tasks.add_task(_run_analysis_async, analysis.id)
+        except Exception as analysis_exc:  # noqa: BLE001
+            logger.warning(
+                "Initial analysis scheduling skipped for repo %d: %s",
+                repository.id,
+                analysis_exc,
+            )
 
         return repository
 
@@ -313,10 +341,6 @@ async def list_repositories(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
-    github_client: Annotated[
-        GitHubClient,
-        Depends(get_github_client),
-    ],
     db: Annotated[
         AsyncSession,
         Depends(get_db),
@@ -329,6 +353,10 @@ async def list_repositories(
         int,
         Query(ge=1, le=100),
     ] = 20,
+    github_client: Annotated[
+        GitHubClient | None,
+        Depends(lambda: None),
+    ] = None,
 ) -> RepositoryListResponse:
     """
     List repositories belonging to an organization.
@@ -340,7 +368,6 @@ async def list_repositories(
 
     service = _create_repository_service(
         db=db,
-        github_client=github_client,
     )
 
     repositories, total = await service.list_repositories(
@@ -374,14 +401,14 @@ async def get_repository(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
-    github_client: Annotated[
-        GitHubClient,
-        Depends(get_github_client),
-    ],
     db: Annotated[
         AsyncSession,
         Depends(get_db),
     ],
+    github_client: Annotated[
+        GitHubClient | None,
+        Depends(lambda: None),
+    ] = None,
 ) -> RepositoryResponse:
     """
     Retrieve a repository belonging to an organization.
@@ -392,7 +419,6 @@ async def get_repository(
 
     service = _create_repository_service(
         db=db,
-        github_client=github_client,
     )
 
     try:
@@ -495,14 +521,14 @@ async def delete_repository(
         Path(gt=0),
     ],
     member: OrganizationMemberDependency,
-    github_client: Annotated[
-        GitHubClient,
-        Depends(get_github_client),
-    ],
     db: Annotated[
         AsyncSession,
         Depends(get_db),
     ],
+    github_client: Annotated[
+        GitHubClient | None,
+        Depends(lambda: None),
+    ] = None,
 ) -> Response:
     """
     Remove a repository from an organization.
@@ -515,7 +541,6 @@ async def delete_repository(
 
     service = _create_repository_service(
         db=db,
-        github_client=github_client,
     )
 
     try:

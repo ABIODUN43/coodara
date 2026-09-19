@@ -14,11 +14,11 @@ Dependency graph:
     AnalysisExecutionDispatcher
 
 
-Background execution:
+Execution:
 
-    BackgroundTasks
+    Celery Queue / Background Execution
         ↓
-    execute_analysis_in_background()
+    execute_analysis_task / execute_analysis_in_background
         ↓
     fresh AsyncSession
         ↓
@@ -82,14 +82,13 @@ async def execute_analysis_in_background(
     """
     Execute an analysis job using a fresh database session.
 
-    Background execution must never reuse the request-scoped
-    database
-    session.
+    Background execution must never reuse the request-scoped database session.
 
-    Transaction ownership belongs to this background execution
-    boundary. Successful execution is committed; failures are rolled
-    back and propagated to the caller.
+    Transaction ownership belongs to this execution boundary.
+    Successful execution commits all results.
+    Failures persist the FAILED state in PostgreSQL before propagating the exception.
     """
+    from app.workers.analysis_tasks import _persist_failed_state, _safe_error_message
 
     async with SessionLocal() as db:
         dispatcher = create_analysis_dispatcher(db)
@@ -101,6 +100,8 @@ async def execute_analysis_in_background(
 
             await db.commit()
 
-        except Exception:
+        except Exception as exc:
             await db.rollback()
+            safe_msg = _safe_error_message(exc)
+            await _persist_failed_state(analysis_id, safe_msg)
             raise

@@ -11,6 +11,7 @@ import {
     loading: boolean;
 
     login: () => Promise<void>;
+    demoLogin: () => Promise<void>;
     logout: () => Promise<void>;
     refreshUser: () => Promise<void>;
   }

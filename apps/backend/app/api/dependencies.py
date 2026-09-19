@@ -194,16 +194,21 @@ async def get_current_github_access_token(
             ),
         ) from exc
 
-async def get_github_client() -> AsyncIterator[GitHubClient]:
-    """
-    Provide a GitHub API client for the current request.
+_shared_github_http_client: httpx.AsyncClient | None = None
 
-    The underlying HTTP client is created for the request
-    and closed after the dependency scope ends.
-    """
 
-    async with httpx.AsyncClient() as client:
-        yield GitHubClient(client)
+def get_shared_github_http_client() -> httpx.AsyncClient:
+    global _shared_github_http_client
+    if _shared_github_http_client is None or _shared_github_http_client.is_closed:
+        _shared_github_http_client = httpx.AsyncClient()
+    return _shared_github_http_client
+
+
+async def get_github_client() -> GitHubClient:
+    """
+    Provide a GitHub API client using a shared HTTP connection pool.
+    """
+    return GitHubClient(get_shared_github_http_client())
 
 CurrentUser = Annotated[
     User,

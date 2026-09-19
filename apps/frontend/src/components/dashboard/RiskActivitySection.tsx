@@ -1,4 +1,9 @@
-import { RefreshCw, Share2, Package, Database, type LucideIcon } from "lucide-react";
+import { RefreshCw, Share2, Database, ShieldCheck, type LucideIcon } from "lucide-react";
+import type { DashboardOverviewData } from "@/hooks/useDashboardOverview";
+
+interface Props {
+  data?: DashboardOverviewData;
+}
 
 const BAND = {
   good: { c: "var(--cd-good)", bg: "var(--cd-good-bg)", label: "Healthy" },
@@ -13,34 +18,55 @@ interface Risk {
   icon: LucideIcon;
 }
 
-const risks: Risk[] = [
-  { sev: "risk", title: "Circular dependency detected", detail: "auth-service → user-service → auth-service", icon: RefreshCw },
-  { sev: "warn", title: "High coupling between modules", detail: "payment-service is tightly coupled with billing-service", icon: Share2 },
-  { sev: "warn", title: "Large service detected", detail: "notification-service has 14K+ lines of code", icon: Package },
-  { sev: "good", title: "Shared database anti-pattern", detail: "Three services read/write the same Postgres instance", icon: Database },
-];
-
-const activity = [
-  { t: "10:42", text: "Analysis completed — architecture score +5", tag: "good" as const },
-  { t: "09:15", text: "New circular dependency detected in auth-service", tag: "risk" as const },
-  { t: "Yesterday", text: "Risk reduced — backend-api coupling improved", tag: "good" as const },
-  { t: "Yesterday", text: "Analysis completed on payment-service", tag: "warn" as const },
-  { t: "Jul 22", text: "Snapshot captured for backend-api", tag: "good" as const },
-];
-
-const analysisQueue = [
-  { status: "running" as const, text: "Frontend analysis" },
-  { status: "pending" as const, text: "Dependency scan" },
-  { status: "completed" as const, text: "Backend analysis" },
-];
-
-const QUEUE_COLOR = {
+const QUEUE_COLOR: Record<string, string> = {
   running: "var(--cd-accent)",
   pending: "var(--cd-ink-faint)",
+  queued: "var(--cd-ink-faint)",
   completed: "var(--cd-good)",
+  failed: "var(--cd-risk)",
+  cancelled: "var(--cd-ink-faint)",
 };
 
-export function RiskActivitySection() {
+
+export function RiskActivitySection({ data }: Props) {
+  const allIssues = data?.allIssues ?? [];
+  const hasRealIssues = allIssues.length > 0;
+
+  const risks: Risk[] = hasRealIssues
+    ? allIssues.slice(0, 4).map((i) => ({
+        sev: i.issue.severity === "critical" ? "risk" : "warn",
+        title: i.issue.title,
+        detail: `${i.repoName} — ${i.issue.description}`,
+        icon: i.issue.severity === "critical" ? RefreshCw : Share2,
+      }))
+    : [
+        {
+          sev: "good",
+          title: "Clean Architecture Health",
+          detail: "No critical circular dependencies or architectural violations detected.",
+          icon: ShieldCheck,
+        },
+        {
+          sev: "good",
+          title: "AST Telemetry Active",
+          detail: "Automated scans extracting exact module bounds and dependency graphs.",
+          icon: Database,
+        },
+      ];
+
+  const activity = data?.recentActivities?.length
+    ? data.recentActivities.slice(0, 5)
+    : [
+        { timestamp: "Recent", text: "Architecture scanning engine active", tag: "good" as const },
+        { timestamp: "Continuous", text: "AST dependency analyzers watching organization repositories", tag: "good" as const },
+      ];
+
+  const queue = data?.analysisQueue?.length
+    ? data.analysisQueue.slice(0, 5)
+    : [
+        { status: "completed" as const, text: "Organization code scan" },
+      ];
+
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
       {/* Top risks */}
@@ -49,11 +75,11 @@ export function RiskActivitySection() {
           <h3 className="text-[13px] font-semibold text-[var(--cd-ink)]">Top risks</h3>
         </div>
         <div>
-          {risks.map((r) => {
+          {risks.map((r, i) => {
             const Icon = r.icon;
             return (
               <div
-                key={r.title}
+                key={`${r.title}-${i}`}
                 className="flex items-start gap-2.5 border-b border-[var(--cd-border-soft,var(--cd-border))] px-4 py-3 last:border-b-0"
               >
                 <div
@@ -92,7 +118,7 @@ export function RiskActivitySection() {
         <div>
           {activity.map((a, i) => (
             <div
-              key={`${a.t}-${i}`}
+              key={`${a.timestamp}-${i}`}
               className="flex gap-2.5 border-b border-[var(--cd-border-soft,var(--cd-border))] px-4 py-3 last:border-b-0"
             >
               <div
@@ -101,7 +127,7 @@ export function RiskActivitySection() {
               />
               <div>
                 <p className="text-[12.5px] leading-snug text-[var(--cd-ink)]">{a.text}</p>
-                <span className="font-mono text-[11px] text-[var(--cd-ink-faint)]">{a.t}</span>
+                <span className="font-mono text-[11px] text-[var(--cd-ink-faint)]">{a.timestamp}</span>
               </div>
             </div>
           ))}
@@ -114,9 +140,9 @@ export function RiskActivitySection() {
           <h3 className="text-[13px] font-semibold text-[var(--cd-ink)]">Analysis queue</h3>
         </div>
         <div>
-          {analysisQueue.map((q) => (
+          {queue.map((q, i) => (
             <div
-              key={q.text}
+              key={`${q.text}-${i}`}
               className="flex items-center gap-2.5 border-b border-[var(--cd-border-soft,var(--cd-border))] px-4 py-3 last:border-b-0"
             >
               <span

@@ -16,7 +16,9 @@ GitHub OAuth credentials are encrypted server-side.
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
+from urllib.parse import quote_plus
 
 from app.api.dependencies import get_current_active_user
 from app.core.config import settings
@@ -49,6 +51,8 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/auth",
@@ -205,17 +209,26 @@ async def github_callback(
     )
 
     if not cookie_state or cookie_state != state:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OAuth state.",
+        logger.warning(
+            "OAuth state mismatch or missing cookie: cookie=%s, query=%s",
+            cookie_state,
+            state,
+        )
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/login?error={quote_plus('OAuth session expired or invalid. Please try logging in again.')}",
+            status_code=status.HTTP_302_FOUND,
         )
 
     if not await github_oauth_state_service.consume_state(
         state,
     ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OAuth state is invalid or expired.",
+        logger.warning(
+            "OAuth state in Redis expired or invalid: %s",
+            state,
+        )
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/login?error={quote_plus('OAuth session expired. Please try logging in again.')}",
+            status_code=status.HTTP_302_FOUND,
         )
 
     try:
@@ -249,11 +262,19 @@ async def github_callback(
 
     except GitHubOAuthError as exc:
         await db.rollback()
+        logger.error("GitHub OAuth callback failed: %s", exc, exc_info=True)
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/login?error={quote_plus(str(exc))}",
+            status_code=status.HTTP_302_FOUND,
+        )
 
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="GitHub authentication failed.",
-        ) from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.error("Unexpected error during OAuth callback: %s", exc, exc_info=True)
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/login?error={quote_plus(f'Authentication error: {exc}')}",
+            status_code=status.HTTP_302_FOUND,
+        )
 
     response = RedirectResponse(
         url=f"{settings.FRONTEND_URL}/auth/callback",
@@ -351,6 +372,42 @@ async def logout(
     return LogoutResponse()
 
 
+@router.post(
+    "/demo-login",
+    response_model=AuthenticatedUserResponse,
+)
+async def demo_login(
+    response: Response,
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
+) -> AuthenticatedUserResponse:
+    """
+    Log in with demo user for instant testing without GitHub OAuth.
+    """
+
+    user = await auth_service.authenticate_demo_user(
+        db,
+    )
+
+    await db.commit()
+
+    tokens = await auth_service.create_session(
+        user,
+    )
+
+    _set_auth_cookies(
+        response,
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+    )
+
+    return AuthenticatedUserResponse(
+        user=user,
+    )
+
+
 @router.get(
     "/me",
     response_model=AuthenticatedUserResponse,
@@ -367,4 +424,4 @@ async def get_current_user_profile(
 
     return AuthenticatedUserResponse(
         user=current_user,
-    )
+    )

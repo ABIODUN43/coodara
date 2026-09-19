@@ -19,6 +19,7 @@ from app.api.dependencies import (
     get_current_active_user,
 )
 from app.db.session import get_db
+from app.models.enums.organization_role import OrganizationRole
 from app.models.organization import Organization
 from app.models.user import User
 from app.repositories.organization_member_repository import (
@@ -184,3 +185,59 @@ async def get_organization(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found.",
         ) from exc
+
+
+@router.delete(
+    "/{organization_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def delete_organization(
+    organization_id: Annotated[
+        int,
+        Path(gt=0),
+    ],
+    member: OrganizationMemberDependency,
+    current_user: Annotated[
+        User,
+        Depends(get_current_active_user),
+    ],
+    db: Annotated[
+        AsyncSession,
+        Depends(get_db),
+    ],
+) -> dict[str, bool]:
+    """
+    Delete an organization.
+
+    Access requires owner or admin membership in the organization.
+    """
+
+    if member.role not in (OrganizationRole.OWNER, OrganizationRole.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organization owners or admins can delete an organization.",
+        )
+
+    service = _create_organization_service(
+        db,
+    )
+
+    try:
+        await service.delete_organization(
+            organization_id=organization_id,
+            user_id=current_user.id,
+        )
+
+        await db.commit()
+
+        return {"success": True}
+
+    except OrganizationNotFoundError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found.",
+        ) from exc
+    except Exception:
+        await db.rollback()
+        raise

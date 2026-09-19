@@ -219,6 +219,8 @@ async def test_execute_transitions_job_to_running_and_completed(
     workspace_class.assert_called_once_with(
         clone_url=repository.clone_url,
         branch=repository.default_branch,
+        repository_id=repository.id,
+        persistent=True,
     )
 
     service.analysis_repository.create_result.assert_called_once()
@@ -392,11 +394,4 @@ def _attach_result_id(
     created_result,
 ):
     result.id = created_result.id
-
-    # The production code assigns relationships directly.
-    # Ensure the test object supports the same behavior.
-    result.metrics = None
-    result.technologies = []
-    result.dependency_graph = None
-
-    return result
+    return result

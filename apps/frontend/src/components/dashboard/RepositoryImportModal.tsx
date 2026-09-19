@@ -16,7 +16,6 @@ import {
 
 import { useProject } from "@/context/ProjectContext";
 import { useDashboardActionContext } from "@/context/DashboardActionContext";
-import { USE_MOCK_REPOSITORIES_DATA } from "@/dev/devFlags";
 
 import type { GitHubRepositoryOption } from "@/types/repository";
 
@@ -104,7 +103,7 @@ export function RepositoryImportModal() {
    */
   const { orgId } = useParams<{ orgId: string }>();
 
-  const { activeProject } = useProject();
+  const { activeProject, organizations } = useProject();
 
   const {
     isRepositoryImportOpen,
@@ -139,25 +138,27 @@ export function RepositoryImportModal() {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   /*
-   * IMPORTANT:
-   *
-   * Repository API endpoints expect:
-   *
-   *     organization_id: int
-   *
-   * The dashboard's activeProject already contains the numeric
-   * organization ID, so use that as the source of truth.
-   *
-   * Do NOT use orgId directly because it can be a slug such as
-   * "Coodara-Team".
+   * Resolve the explicit numeric organization ID:
+   * 1. If orgId route parameter is a valid integer, use it.
+   * 2. If orgId route parameter matches an organization slug, resolve its integer ID.
+   * 3. Otherwise fall back to activeProject.id.
    */
-  const organizationId = activeProject?.id;
+  const parsedOrgId = orgId ? Number(orgId) : undefined;
+  const matchedOrgBySlug = orgId
+    ? organizations.find(
+        (o) =>
+          o.slug?.toLowerCase() === orgId.toLowerCase() ||
+          String(o.id) === orgId,
+      )
+    : undefined;
 
-  /*
-   * Keep orgId referenced so it is clear that it is a route
-   * identifier/slug and intentionally not used as the API ID.
-   */
-  void orgId;
+  const organizationId =
+    parsedOrgId !== undefined &&
+    Number.isInteger(parsedOrgId) &&
+    parsedOrgId > 0
+      ? parsedOrgId
+      : matchedOrgBySlug?.id ?? activeProject?.id;
+
 
   /*
    * Load GitHub repositories when the modal opens and the
@@ -168,14 +169,6 @@ export function RepositoryImportModal() {
       !isRepositoryImportOpen ||
       !organizationId
     ) {
-      return;
-    }
-
-    if (USE_MOCK_REPOSITORIES_DATA) {
-      setRepositories([]);
-      setRepositoriesError(
-        "Repository selection is disabled while running on demo data.",
-      );
       return;
     }
 
@@ -308,13 +301,6 @@ export function RepositoryImportModal() {
     ) {
       setImportError(
         "Select an organization and repository before importing.",
-      );
-      return;
-    }
-
-    if (USE_MOCK_REPOSITORIES_DATA) {
-      setImportError(
-        "Importing repositories is disabled while running on demo data.",
       );
       return;
     }

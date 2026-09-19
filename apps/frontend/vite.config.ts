@@ -13,4 +13,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // @ts-expect-error vitest options
+  test: {
+    environment: "jsdom",
+    globals: true,
+    pool: "threads",
+  },
 });

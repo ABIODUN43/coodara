@@ -15,6 +15,7 @@ The analyzer is:
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -715,21 +716,33 @@ class TechnologyAnalyzer(
         self,
         root_path: Path,
     ) -> list[Path]:
-        """Return repository files while excluding generated/vendor trees."""
-
+        """Return repository files safely and fast."""
+        resolved_root = root_path.resolve()
         files: list[Path] = []
+        max_file_count = 20000
 
-        for path in root_path.rglob("*"):
-            if not path.is_file():
-                continue
+        for root, dirnames, filenames in os.walk(root_path):
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in self._IGNORED_DIRECTORIES and not d.startswith(".")
+            ]
 
-            if any(
-                part in self._IGNORED_DIRECTORIES
-                for part in path.parts
-            ):
-                continue
+            for filename in filenames:
+                if len(files) >= max_file_count:
+                    break
 
-            files.append(path)
+                path = Path(root) / filename
+                try:
+                    resolved = path.resolve()
+                    if not resolved.is_relative_to(resolved_root):
+                        continue
+                except (ValueError, OSError):
+                    continue
+
+                files.append(path)
+
+            if len(files) >= max_file_count:
+                break
 
         files.sort(
             key=lambda path: path.as_posix().lower(),

@@ -13,6 +13,7 @@ from app.db.base import Base
 from app.models.organization_member import OrganizationMember
 
 if TYPE_CHECKING:
+    from app.models.organization_settings import OrganizationSettings
     from app.models.repository import Repository
 from sqlalchemy import (
     DateTime,
@@ -96,6 +97,13 @@ class Organization(Base):
     repositories: Mapped[list[Repository]] = relationship(
         "Repository",
         back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+
+    settings: Mapped[OrganizationSettings | None] = relationship(
+        "OrganizationSettings",
+        back_populates="organization",
+        uselist=False,
         cascade="all, delete-orphan",
     )
 

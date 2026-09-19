@@ -85,7 +85,7 @@ class RepositoryService:
         self,
         *,
         db: AsyncSession,
-        github_client: GitHubClient,
+        github_client: GitHubClient | None = None,
         github_access_token: str | None = None,
     ) -> None:
         self.repository_repository = RepositoryRepository(db)

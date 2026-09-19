@@ -8,6 +8,9 @@ Transaction ownership belongs to the caller/application layer.
 
 from __future__ import annotations
 
+import re
+import uuid
+
 from app.models.enums.organization_role import OrganizationRole
 from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember
@@ -35,6 +38,12 @@ class OrganizationNotFoundError(
     OrganizationServiceError,
 ):
     """Organization does not exist."""
+
+
+class OrganizationPermissionError(
+    OrganizationServiceError,
+):
+    """User lacks permission to manage organization."""
 
 
 class OrganizationService:
@@ -65,8 +74,13 @@ class OrganizationService:
         can be committed atomically by the caller.
         """
 
+        slug = payload.slug
+        if not slug:
+            base_slug = re.sub(r"[^a-z0-9]+", "-", payload.name.lower()).strip("-")
+            slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+
         existing = await self.organization_repository.get_by_slug(
-            payload.slug,
+            slug,
         )
 
         if existing is not None:
@@ -76,7 +90,7 @@ class OrganizationService:
 
         organization = Organization(
             name=payload.name,
-            slug=payload.slug,
+            slug=slug,
             description=payload.description,
             owner_id=user_id,
         )
@@ -136,3 +150,17 @@ class OrganizationService:
         )
 
         return list(organizations)
+
+    async def delete_organization(
+        self,
+        *,
+        organization_id: int,
+        user_id: int,
+    ) -> None:
+        """
+        Delete an organization.
+        """
+
+        organization = await self.get_organization(organization_id)
+        await self.organization_repository.delete(organization)
+

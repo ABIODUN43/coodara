@@ -1,21 +1,7 @@
 """
 Coodara AI Chat API.
 
-Chat is organization and repository scoped.
-
-Authorization:
-
-    authenticated user
-        ↓
-    organization membership
-        ↓
-    ChatService
-        ↓
-    repository validation
-        ↓
-    Coodara context
-        ↓
-    LLM
+Chat is organization and repository scoped with multi-turn conversation memory.
 """
 
 from __future__ import annotations
@@ -42,11 +28,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(
-    prefix=(
-        "/organizations/{organization_id}"
-        "/repositories/{repository_id}"
-        "/chat"
-    ),
+    prefix="/organizations/{organization_id}",
     tags=["AI Chat"],
 )
 
@@ -60,10 +42,42 @@ def _create_chat_service(
 
 
 @router.post(
-    "",
+    "/chat",
     response_model=ChatMessageResponse,
 )
-async def chat(
+async def chat_organization(
+    organization_id: Annotated[
+        int,
+        Path(gt=0),
+    ],
+    request: ChatMessageRequest,
+    member: OrganizationMemberDependency,
+    db: AsyncSession = Depends(get_db),
+) -> ChatMessageResponse:
+    """
+    Ask Coodara AI a question about the organization's architecture and repositories.
+    """
+
+    service = _create_chat_service(db)
+    response = await service.chat_organization(
+        organization_id=organization_id,
+        message=request.message,
+        conversation_history=request.conversation_history,
+    )
+
+    return ChatMessageResponse(
+        message=response.content,
+        model=response.model,
+        confidence="HIGH",
+        structured_reasoning=response.structured_reasoning,
+    )
+
+
+@router.post(
+    "/repositories/{repository_id}/chat",
+    response_model=ChatMessageResponse,
+)
+async def chat_repository(
     organization_id: Annotated[
         int,
         Path(gt=0),
@@ -77,7 +91,7 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ) -> ChatMessageResponse:
     """
-    Ask Coodara a question about a repository.
+    Ask Coodara AI a question about a specific repository.
     """
 
     service = _create_chat_service(db)
@@ -87,11 +101,14 @@ async def chat(
             organization_id=organization_id,
             repository_id=repository_id,
             message=request.message,
+            conversation_history=request.conversation_history,
         )
 
         return ChatMessageResponse(
             message=response.content,
             model=response.model,
+            confidence="HIGH",
+            structured_reasoning=response.structured_reasoning,
         )
 
     except ChatRepositoryNotFoundError as exc:

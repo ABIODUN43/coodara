@@ -190,6 +190,7 @@ class AnalysisResult(Base):
         "ArchitectureSnapshot",
         back_populates="analysis_result",
         uselist=False,
+        lazy="selectin",
     )
 
     metrics: Mapped[RepositoryMetrics | None] = relationship(
@@ -197,12 +198,14 @@ class AnalysisResult(Base):
         back_populates="result",
         cascade="all, delete-orphan",
         uselist=False,
+        lazy="selectin",
     )
 
     technologies: Mapped[list[DetectedTechnology]] = relationship(
         "DetectedTechnology",
         back_populates="result",
         cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
     dependency_graph: Mapped[DependencyGraph | None] = relationship(
@@ -210,7 +213,9 @@ class AnalysisResult(Base):
         back_populates="result",
         cascade="all, delete-orphan",
         uselist=False,
+        lazy="selectin",
     )
+
 
     def __repr__(self) -> str:
         return (

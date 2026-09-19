@@ -1,32 +1,60 @@
 services:
   postgres:
     image: postgres:17
-
     container_name: coodara-postgres
-
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: coodara
-
     ports:
       - "5433:5432"
-
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
     image: redis:7
-
     container_name: coodara-redis
-
     ports:
       - "6379:6379"
-
     volumes:
       - redis_data:/data
-
     command: redis-server --appendonly yes
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: coodara-api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/coodara
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - DEBUG=True
+    depends_on:
+      - postgres
+      - redis
+
+  analysis-worker:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: coodara-worker
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/coodara
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - DEBUG=True
+    depends_on:
+      - postgres
+      - redis
 
 volumes:
   postgres_data:

@@ -5,6 +5,13 @@ import {
   ArrowLeft,
   Play,
   AlertTriangle,
+  Loader2,
+  Network,
+  Share2,
+  ChevronDown,
+  ArrowRight,
+  Layers,
+  FileCode,
 } from "lucide-react";
 
 import { getRepository } from "@/api/repositories";
@@ -18,12 +25,6 @@ import { useAnalysisPolling } from "@/hooks/useAnalysisPolling";
 
 import type { Repository } from "@/types/repository";
 import type { Analysis, AnalysisResult } from "@/types/analysis";
-
-import { USE_MOCK_ANALYSIS_DATA } from "@/dev/devFlags";
-import {
-  getMockAnalysesForRepo,
-  getMockResult,
-} from "@/data/mockAnalyses";
 
 const ACTIVE_STATUSES = new Set([
   "pending",
@@ -69,7 +70,14 @@ function runButtonLabel(status: Analysis["status"] | "empty") {
   }
 }
 
-function maintBand(v: number) {
+function maintBand(v: number | null | undefined) {
+  if (v == null) {
+    return {
+      label: "Not Calculated",
+      color: "var(--cd-ink-faint)",
+    };
+  }
+
   if (v >= 80) {
     return {
       label: "Healthy",
@@ -89,6 +97,7 @@ function maintBand(v: number) {
     color: "var(--cd-risk)",
   };
 }
+
 
 function formatDate(iso: string | null) {
   if (!iso) return "—";
@@ -140,40 +149,22 @@ export function AnalysisPage() {
     setLoadError(null);
 
     try {
-      /*
-       * Repository data is ALWAYS real.
-       * Only analysis result/history data can use mocks.
-       */
-      const repoData = await getRepository(orgId, repoId);
+      const [repoData, analysisList] = await Promise.all([
+        getRepository(orgId, repoId),
+        listAnalyses(orgId, repoId, 1, 20),
+      ]);
 
       setRepo(repoData);
-
-      if (USE_MOCK_ANALYSIS_DATA) {
-        const list = getMockAnalysesForRepo(repoId);
-
-        setHistory(list);
-
-        const first = list[0] ?? null;
-
-        setLatest(first);
-        setSelectedId(first?.id ?? null);
-
-        return;
-      }
-
-      const analysisList = await listAnalyses(
-        orgId,
-        repoId,
-        1,
-        20,
-      );
-
       setHistory(analysisList.items);
 
       const first = analysisList.items[0] ?? null;
 
       setLatest(first);
       setSelectedId(first?.id ?? null);
+
+      if (first && first.status === "completed") {
+        void loadResultFor(first);
+      }
     } catch (err) {
       console.error(
         "Failed to load repository/analysis:",
@@ -196,14 +187,12 @@ export function AnalysisPage() {
   }, [orgId, repoId]);
 
   /*
-   * Real analysis polling.
-   *
-   * When mock mode is disabled, this polls the backend analysis job.
+   * Real analysis polling from backend worker pipeline.
    */
   const polledLatest = useAnalysisPolling(
     safeOrgId,
     safeRepoId,
-    USE_MOCK_ANALYSIS_DATA ? null : latest,
+    latest,
     (settled) => {
       setHistory((prev) => [
         settled,
@@ -213,23 +202,33 @@ export function AnalysisPage() {
       setLatest(settled);
 
       if (settled.id === selectedId) {
-        loadResultFor(settled);
+        void loadResultFor(settled);
       }
     },
   );
 
-  const effectiveLatest = USE_MOCK_ANALYSIS_DATA
-    ? latest
-    : polledLatest ?? latest;
+  const effectiveLatest = polledLatest ?? latest;
+
+  // Sync polled changes (progress, status) to history and results in real time
+  useEffect(() => {
+    if (polledLatest) {
+      setHistory((prev) => {
+        const exists = prev.some((h) => h.id === polledLatest.id);
+        if (!exists) {
+          return [polledLatest, ...prev];
+        }
+        return prev.map((h) => (h.id === polledLatest.id ? polledLatest : h));
+      });
+      if (polledLatest.status === "completed" && (selectedId === null || selectedId === polledLatest.id)) {
+        void loadResultFor(polledLatest);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polledLatest?.id, polledLatest?.status, polledLatest?.progress]);
 
   async function loadResultFor(analysis: Analysis) {
     if (analysis.status !== "completed") {
       setResult(null);
-      return;
-    }
-
-    if (USE_MOCK_ANALYSIS_DATA) {
-      setResult(getMockResult(analysis.id) ?? null);
       return;
     }
 
@@ -262,15 +261,18 @@ export function AnalysisPage() {
   useEffect(() => {
     if (
       effectiveLatest &&
-      effectiveLatest.id === selectedId
+      effectiveLatest.id === selectedId &&
+      effectiveLatest.status === "completed" &&
+      !result
     ) {
-      loadResultFor(effectiveLatest);
+      void loadResultFor(effectiveLatest);
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     effectiveLatest?.id,
     effectiveLatest?.status,
+    selectedId,
   ]);
 
   async function handleSelectHistory(id: number) {
@@ -296,81 +298,6 @@ export function AnalysisPage() {
 
     setConflictNotice(null);
 
-    /*
-     * Mock mode is retained only for development.
-     */
-    if (USE_MOCK_ANALYSIS_DATA) {
-      const mockId = Date.now();
-
-      const base: Analysis = {
-        id: mockId,
-        repository_id: Number(repoId),
-        status: "running",
-        progress: 5,
-        started_at: new Date().toISOString(),
-        completed_at: null,
-        error_message: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      setHistory((prev) => [
-        base,
-        ...prev,
-      ]);
-
-      setLatest(base);
-      setSelectedId(base.id);
-      setResult(null);
-
-      let progress = 5;
-
-      const timer = setInterval(() => {
-        progress += 15 + Math.random() * 10;
-
-        if (progress >= 100) {
-          clearInterval(timer);
-
-          const finished: Analysis = {
-            ...base,
-            status: "completed",
-            progress: 100,
-            completed_at:
-              new Date().toISOString(),
-            updated_at:
-              new Date().toISOString(),
-          };
-
-          setLatest(finished);
-
-          setHistory((prev) => [
-            finished,
-            ...prev.filter(
-              (h) => h.id !== finished.id,
-            ),
-          ]);
-
-          setResult(
-            getMockResult(7001) ?? null,
-          );
-        } else {
-          setLatest((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  progress: Math.round(progress),
-                }
-              : prev,
-          );
-        }
-      }, 700);
-
-      return;
-    }
-
-    /*
-     * REAL ANALYSIS
-     */
     try {
       const created = await startAnalysis(
         orgId,
@@ -407,8 +334,40 @@ export function AnalysisPage() {
 
   if (loading) {
     return (
-      <div className="p-6 text-[13px] text-[var(--cd-ink-soft)]">
-        Loading repository...
+      <div className="p-8 max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center gap-3 text-sm text-[var(--cd-ink-soft)]">
+          <Link
+            to="/dashboard/repositories"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--cd-accent)] hover:underline"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Repositories
+          </Link>
+          <span>/</span>
+          <span className="h-4 w-32 bg-[var(--cd-surface-2)] rounded animate-pulse inline-block" />
+        </div>
+
+        <div className="flex items-center justify-between border-b border-[var(--cd-border)] pb-6">
+          <div className="space-y-2">
+            <div className="h-7 w-64 bg-[var(--cd-surface-2)] rounded animate-pulse" />
+            <div className="h-4 w-40 bg-[var(--cd-surface-2)] rounded animate-pulse" />
+          </div>
+          <div className="h-9 w-32 bg-[var(--cd-surface-2)] rounded-md animate-pulse" />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface-1)] p-4 space-y-3">
+              <div className="h-4 w-24 bg-[var(--cd-surface-2)] rounded animate-pulse" />
+              <div className="h-8 w-16 bg-[var(--cd-surface-2)] rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-center py-12 gap-3 text-sm text-[var(--cd-ink-soft)]">
+          <Loader2 className="h-4 w-4 animate-spin text-[var(--cd-accent)]" />
+          <span>Connecting to repository pipeline...</span>
+        </div>
       </div>
     );
   }
@@ -747,6 +706,21 @@ export function AnalysisPage() {
             </div>
           )}
 
+          {!resultLoading && !result && (
+            <div className="mb-4 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-6 text-center text-[13px] text-[var(--cd-ink-soft)]">
+              <p>Analysis completed. Telemetry snapshot recorded.</p>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => selectedEntry && loadResultFor(selectedEntry)}
+                  className="rounded-lg bg-[var(--cd-brand)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90"
+                >
+                  Fetch Result Details
+                </button>
+              </div>
+            </div>
+          )}
+
           {!resultLoading && result && (
             <>
               <div className="mb-4 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)]">
@@ -758,22 +732,24 @@ export function AnalysisPage() {
 
                 <div className="grid grid-cols-2 gap-px overflow-hidden rounded-t-lg bg-[var(--cd-border)] sm:grid-cols-5">
                   {[
-                    ["Files", result.metrics.files],
+                    ["Files", result.metrics?.files ?? 0],
                     [
                       "Lines",
-                      result.metrics.loc.toLocaleString(),
+                      (result.metrics?.loc ?? 0).toLocaleString(),
                     ],
                     [
                       "Classes",
-                      result.metrics.classes,
+                      result.metrics?.classes ?? 0,
                     ],
                     [
                       "Functions",
-                      result.metrics.functions,
+                      result.metrics?.functions ?? 0,
                     ],
                     [
                       "Complexity",
-                      result.metrics.complexity,
+                      result.metrics?.complexity != null
+                        ? Number(result.metrics.complexity).toFixed(1)
+                        : "—",
                     ],
                   ].map(([label, value]) => (
                     <div
@@ -800,7 +776,7 @@ export function AnalysisPage() {
                     <div className="mt-0.5 text-[11px] text-[var(--cd-ink-faint)]">
                       {
                         maintBand(
-                          result.metrics.maintainability,
+                          result.metrics?.maintainability,
                         ).label
                       }
                     </div>
@@ -809,11 +785,10 @@ export function AnalysisPage() {
                       <div
                         className="h-full rounded-full transition-[width] duration-500"
                         style={{
-                          width: `${result.metrics.maintainability}%`,
+                          width: `${result.metrics?.maintainability ?? 0}%`,
                           background:
                             maintBand(
-                              result.metrics
-                                .maintainability,
+                              result.metrics?.maintainability,
                             ).color,
                         }}
                       />
@@ -825,21 +800,23 @@ export function AnalysisPage() {
                     style={{
                       color:
                         maintBand(
-                          result.metrics
-                            .maintainability,
+                          result.metrics?.maintainability,
                         ).color,
                     }}
                   >
-                    {result.metrics.maintainability.toFixed(
-                      1,
-                    )}
+                    {result.metrics?.maintainability != null
+                      ? Number(result.metrics.maintainability).toFixed(1)
+                      : "—"}
 
-                    <span className="text-[13px] font-medium text-[var(--cd-ink-faint)]">
-                      /100
-                    </span>
+                    {result.metrics?.maintainability != null && (
+                      <span className="text-[13px] font-medium text-[var(--cd-ink-faint)]">
+                        /100
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
+
 
               <div className="mb-4 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)]">
                 <div className="border-b border-[var(--cd-border-soft)] px-4.5 py-3.5">
@@ -883,38 +860,163 @@ export function AnalysisPage() {
                 </div>
               </div>
 
-              <div className="mb-4 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)]">
-                <div className="border-b border-[var(--cd-border-soft)] px-4.5 py-3.5">
-                  <h3 className="text-[12.5px] font-semibold uppercase tracking-wide text-[var(--cd-ink-soft)]">
-                    Dependency Graph
-                  </h3>
+              {/* Dependency Graph Topology Section */}
+              <div className="mb-4 rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--cd-border-soft)] px-5 py-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--cd-accent-soft)] text-[var(--cd-accent)]">
+                      <Network className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <h3 className="text-[13px] font-bold tracking-tight text-[var(--cd-ink)]">
+                        AST Dependency Graph Topology G = (V, E)
+                      </h3>
+                      <p className="text-[11.5px] text-[var(--cd-ink-faint)]">
+                        Complete code symbol dependencies extracted from repository Abstract Syntax Trees
+                      </p>
+                    </div>
+                  </div>
+
+                  {orgId && repoId && (
+                    <Link
+                      to={`/dashboard/organizations/${orgId}/repositories/${repoId}/architecture?tab=map`}
+                      className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-xs hover:bg-[var(--cd-accent-hover)] transition-colors"
+                    >
+                      <Network className="h-3.5 w-3.5" />
+                      <span>Explore Interactive Architecture System Map</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
                 </div>
 
-                <div className="overflow-x-auto p-5">
+                <div className="p-5">
                   {result.dependency_graph ? (
-                    <pre className="whitespace-pre-wrap break-all font-mono text-[11.5px] leading-relaxed text-[var(--cd-ink-soft)]">
-                      {(() => {
-                        try {
-                          return JSON.stringify(
-                            JSON.parse(
-                              result.dependency_graph
-                                .graph_data,
-                            ),
-                            null,
-                            2,
-                          );
-                        } catch {
-                          return result
-                            .dependency_graph
-                            .graph_data;
-                        }
-                      })()}
-                    </pre>
+                    (() => {
+                      const raw = result.dependency_graph.graph_data;
+                      let parsed: { version?: string; nodes?: any[]; edges?: any[] } = {};
+                      try {
+                        parsed = JSON.parse(raw || "{}");
+                      } catch {
+                        parsed = {};
+                      }
+
+                      const totalNodes = parsed.nodes?.length ?? 0;
+                      const totalEdges = parsed.edges?.length ?? 0;
+                      const sampleNodes = (parsed.nodes || []).slice(0, 6);
+
+                      return (
+                        <div className="space-y-4">
+                          {/* Topology Metrics Cards */}
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div className="rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)] p-3.5">
+                              <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--cd-ink-faint)]">
+                                <Layers className="h-3.5 w-3.5 text-[var(--cd-accent)]" />
+                                <span>AST Nodes (|V|)</span>
+                              </div>
+                              <div className="mt-1 font-mono text-[18px] font-bold text-[var(--cd-ink)]">
+                                {totalNodes.toLocaleString()}
+                              </div>
+                              <div className="text-[10.5px] text-[var(--cd-ink-soft)]">
+                                Modules, classes &amp; files
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)] p-3.5">
+                              <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--cd-ink-faint)]">
+                                <Share2 className="h-3.5 w-3.5 text-purple-500" />
+                                <span>Dependency Edges (|E|)</span>
+                              </div>
+                              <div className="mt-1 font-mono text-[18px] font-bold text-[var(--cd-ink)]">
+                                {totalEdges.toLocaleString()}
+                              </div>
+                              <div className="text-[10.5px] text-[var(--cd-ink-soft)]">
+                                Imports, calls &amp; type refs
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)] p-3.5">
+                              <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--cd-ink-faint)]">
+                                <FileCode className="h-3.5 w-3.5 text-emerald-500" />
+                                <span>Analysis Engine</span>
+                              </div>
+                              <div className="mt-1 text-[13px] font-bold text-[var(--cd-ink)] truncate">
+                                AST Graph Parser
+                              </div>
+                              <div className="text-[10.5px] text-[var(--cd-ink-soft)]">
+                                Tree-sitter + Symbol trace
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)] p-3.5">
+                              <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--cd-ink-faint)]">
+                                <Network className="h-3.5 w-3.5 text-blue-500" />
+                                <span>Architecture Snapshot</span>
+                              </div>
+                              <div className="mt-1 text-[13px] font-bold text-[var(--cd-good)] truncate">
+                                Synchronized
+                              </div>
+                              <div className="text-[10.5px] text-[var(--cd-ink-soft)]">
+                                Ready for blast simulation
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Sample Extracted AST Modules */}
+                          {sampleNodes.length > 0 && (
+                            <div className="rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)] p-3.5">
+                              <div className="mb-2 text-[11.5px] font-semibold text-[var(--cd-ink)]">
+                                Sample Extracted AST Nodes (Showing 6 of {totalNodes.toLocaleString()})
+                              </div>
+                              <div className="space-y-1.5">
+                                {sampleNodes.map((node: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between rounded border border-[var(--cd-border-soft)] bg-[var(--cd-surface)] px-3 py-1.5 font-mono text-[11px]"
+                                  >
+                                    <span className="truncate text-[var(--cd-ink)] max-w-[80%]">
+                                      {node.id || node.name || JSON.stringify(node)}
+                                    </span>
+                                    <span className="rounded bg-[var(--cd-sunken)] px-1.5 py-0.5 text-[10px] uppercase font-bold text-[var(--cd-ink-faint)]">
+                                      {node.type || "module"}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Collapsible Raw JSON Payload */}
+                          <details className="group rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)] p-3">
+                            <summary className="flex cursor-pointer items-center justify-between font-mono text-[11.5px] font-semibold text-[var(--cd-ink-soft)] hover:text-[var(--cd-ink)]">
+                              <span>View Raw Graph JSON Payload ({raw.length.toLocaleString()} bytes)</span>
+                              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                            </summary>
+                            <pre className="mt-3 max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--cd-border-soft)] bg-[var(--cd-surface)] p-3 font-mono text-[11px] leading-relaxed text-[var(--cd-ink-soft)]">
+                              {raw.length > 10000
+                                ? JSON.stringify(
+                                    {
+                                      version: parsed.version,
+                                      total_nodes: totalNodes,
+                                      total_edges: totalEdges,
+                                      sample_nodes: sampleNodes,
+                                      note: "Full visual interactive model is available on the Architecture page.",
+                                    },
+                                    null,
+                                    2,
+                                  )
+                                : raw}
+                            </pre>
+                          </details>
+                        </div>
+                      );
+                    })()
                   ) : (
-                    <span className="text-[12.5px] text-[var(--cd-ink-faint)]">
-                      No dependency graph data
-                      for this analysis.
-                    </span>
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <Network className="h-8 w-8 text-[var(--cd-ink-faint)] mb-2" />
+                      <span className="text-[13px] font-medium text-[var(--cd-ink-soft)]">
+                        No dependency graph data available for this analysis run.
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>

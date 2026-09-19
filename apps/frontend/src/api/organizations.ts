@@ -38,3 +38,14 @@ export async function getOrganization(
 
   return data;
 }
+
+export async function deleteOrganization(
+  id: number | string,
+): Promise<{ success: boolean }> {
+  const { data } =
+    await api.delete<{ success: boolean }>(
+      `/organizations/${id}`,
+    );
+
+  return data;
+}

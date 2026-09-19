@@ -36,7 +36,7 @@ from __future__ import annotations
 from math import ceil
 from typing import Annotated
 
-from app.analysis.factory import execute_analysis_in_background
+from app.analysis.factory import create_analysis_dispatcher
 from app.api.dependencies import OrganizationMemberDependency
 from app.db.session import get_db
 from app.schemas.analysis import (
@@ -61,6 +61,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.workers.analysis_tasks import _run_analysis_async
 
 router = APIRouter(
     prefix=(
@@ -101,12 +102,10 @@ async def create_analysis(
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisResponse:
     """
-    Create and schedule a repository analysis.
+    Create and queue a repository analysis.
 
-    The analysis job is committed before the background task
-    is scheduled.
-
-    The background task creates and owns its own database session.
+    The analysis job is committed to PostgreSQL before being
+    submitted to the Celery queue and FastAPI background tasks.
     """
 
     service = _create_analysis_service(db)
@@ -140,13 +139,18 @@ async def create_analysis(
         await db.rollback()
         raise
 
-    # Only schedule execution after the transaction succeeds.
-    background_tasks.add_task(
-        execute_analysis_in_background,
+    # Enqueue to Celery worker queue after durable commit
+    dispatcher = create_analysis_dispatcher(db)
+    task_id = dispatcher.enqueue(
         analysis_id=analysis.id,
     )
 
+    # Fallback to background task runner only if Celery queue is not available
+    if not task_id and background_tasks is not None:
+        background_tasks.add_task(_run_analysis_async, analysis.id)
+
     return analysis
+
 
 
 @router.get(

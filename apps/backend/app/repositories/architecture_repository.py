@@ -266,6 +266,20 @@ class ArchitectureRepository:
 
         return issue
 
+    async def add_issues(
+        self,
+        issues: Sequence[ArchitectureIssue],
+    ) -> Sequence[ArchitectureIssue]:
+        """
+        Persist multiple architecture issues in a single batch flush.
+        """
+        if not issues:
+            return []
+
+        self.db.add_all(issues)
+        await self.db.flush()
+        return issues
+
     async def add_recommendation(
         self,
         recommendation: ArchitectureRecommendation,
@@ -280,3 +294,17 @@ class ArchitectureRepository:
         await self.db.refresh(recommendation)
 
         return recommendation
+
+    async def add_recommendations(
+        self,
+        recommendations: Sequence[ArchitectureRecommendation],
+    ) -> Sequence[ArchitectureRecommendation]:
+        """
+        Persist multiple architecture recommendations in a single batch flush.
+        """
+        if not recommendations:
+            return []
+
+        self.db.add_all(recommendations)
+        await self.db.flush()
+        return recommendations

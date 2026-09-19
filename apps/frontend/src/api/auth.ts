@@ -47,3 +47,11 @@ export async function refreshAccessToken(): Promise<RefreshResponse> {
 export async function logout(): Promise<void> {
   await api.post("/auth/logout");
 }
+
+/**
+ * Perform instant demo login without external OAuth.
+ */
+export async function demoLogin(): Promise<GithubUser> {
+  const { data } = await api.post<{ user: GithubUser }>("/auth/demo-login");
+  return data.user;
+}

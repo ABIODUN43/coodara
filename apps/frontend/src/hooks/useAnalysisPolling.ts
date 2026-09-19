@@ -3,8 +3,7 @@ import { getAnalysis } from "@/api/analyses";
 import type { Analysis } from "@/types/analysis";
 
 const ACTIVE_STATUSES = new Set(["pending", "queued", "running"]);
-const MAX_POLL_MS = 5 * 60 * 1000;
-const POLL_INTERVAL_MS = 2500;
+const MAX_POLL_MS = 30 * 60 * 1000; // 30 minutes
 
 export function useAnalysisPolling(
   orgId: string,
@@ -21,28 +20,39 @@ export function useAnalysisPolling(
 
     startRef.current = Date.now();
     let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
 
     async function poll() {
       if (cancelled) return;
-      if (Date.now() - startRef.current > MAX_POLL_MS) return;
+      const elapsed = Date.now() - startRef.current;
+      if (elapsed > MAX_POLL_MS) {
+        console.warn("Analysis polling reached max duration limit");
+        return;
+      }
+      const pollDelay = elapsed < 30000 ? 1500 : 3000;
+
       try {
         const updated = await getAnalysis(orgId, repoId, analysis!.id);
         if (cancelled) return;
         setCurrent(updated);
         if (ACTIVE_STATUSES.has(updated.status)) {
-          setTimeout(poll, POLL_INTERVAL_MS);
+          timerId = setTimeout(poll, pollDelay);
         } else {
           onSettled(updated);
         }
       } catch {
-        if (!cancelled) setTimeout(poll, POLL_INTERVAL_MS);
+        if (!cancelled) {
+          timerId = setTimeout(poll, pollDelay);
+        }
       }
     }
 
-    const t = setTimeout(poll, POLL_INTERVAL_MS);
+    // Immediate initial poll followed by 1s intervals
+    poll();
+
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      if (timerId) clearTimeout(timerId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysis?.id, analysis?.status]);

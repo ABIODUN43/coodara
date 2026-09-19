@@ -224,6 +224,17 @@ class AnalysisRepository:
 
         return result.scalar_one_or_none()
 
+    async def delete_result(
+        self,
+        result: AnalysisResult,
+    ) -> None:
+        """
+        Remove an existing analysis result.
+        """
+
+        await self.db.delete(result)
+        await self.db.flush()
+
     async def update_result(
         self,
         result: AnalysisResult,
