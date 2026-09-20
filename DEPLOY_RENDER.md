@@ -38,11 +38,12 @@ If you prefer to configure services manually on Render:
 - **Database**: `coodara`
 - **User**: `coodara`
 
-### 2. Backend Web Service
+### 2. Backend Web Service (Render Free Plan Compatible)
 - **Environment**: Python 3
-- **Root Directory**: `.` (or project root)
-- **Build Command**: `pip install -r apps/backend/requirements.txt && alembic upgrade head`
-- **Start Command**: `cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
+- **Root Directory**: `.` (leave blank or set to repo root)
+- **Build Command**: `pip install -r apps/backend/requirements.txt`
+- **Start Command**: `alembic upgrade head && cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
+  *(Note: If your Root Directory in Render is set to `apps/backend`, use: `alembic -c ../alembic.ini upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT`)*
 - **Health Check Path**: `/healthz`
 
 ### 3. Celery Worker (Background Service)

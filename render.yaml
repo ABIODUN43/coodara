@@ -9,8 +9,8 @@ services:
     name: coodara-backend
     runtime: python
     rootDir: .
-    buildCommand: pip install -r apps/backend/requirements.txt && alembic upgrade head
-    startCommand: cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r apps/backend/requirements.txt
+    startCommand: alembic upgrade head && cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION

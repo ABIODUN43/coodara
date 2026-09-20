@@ -5,9 +5,13 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-sys.path.append(
-    os.path.abspath("apps/backend")
-)
+from pathlib import Path
+
+# Resolve apps/backend relative to this migrations directory (repo root / apps / backend)
+repo_root = Path(__file__).resolve().parent.parent
+backend_dir = repo_root / "apps" / "backend"
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 from app.db.base import Base
 from app.models import *
