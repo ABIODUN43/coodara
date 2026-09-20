@@ -10,6 +10,7 @@ Provides:
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from typing import Any
@@ -18,11 +19,16 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import correlation_id_ctx, redact_secrets
 from app.db.session import get_db
-from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -41,6 +47,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Catch-all handler for unexpected internal exceptions.
+    Logs the underlying error server-side for diagnostics while returning a
+    safe, generic HTTP 500 JSON response with CORS headers intact so cross-origin
+    clients do not encounter an opaque browser 'Network Error'.
+    """
+    if isinstance(exc, (HTTPException, StarletteHTTPException, RequestValidationError)):
+        raise exc
+
+    logger.exception(
+        "Unhandled server error processing %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+    )
+    headers: dict[str, str] = {}
+    origin = request.headers.get("Origin") or request.headers.get("origin")
+    if origin and (_cors_origins == ["*"] or origin in _cors_origins or origin.rstrip("/") in _cors_origins):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+
+    request_id = request.headers.get("X-Request-ID")
+    if request_id:
+        headers["X-Request-ID"] = request_id
+
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error."},
+        headers=headers,
+    )
 
 
 @app.middleware("http")
