@@ -17,7 +17,7 @@ GitHub OAuth credentials are encrypted server-side.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote_plus
 
 from app.api.dependencies import get_current_active_user
@@ -76,6 +76,17 @@ def _is_secure_cookie() -> bool:
     return settings.ENVIRONMENT == "production"
 
 
+def _cookie_samesite() -> Literal["none", "lax"]:
+    """
+    Cross-site cookies between frontend and backend on Render subdomains
+    (e.g., coodara-frontend.onrender.com -> coodara-backend.onrender.com)
+    require SameSite=None and Secure=True in production.
+    In local development without HTTPS, SameSite=Lax is used.
+    """
+
+    return "none" if _is_secure_cookie() else "lax"
+
+
 def _set_auth_cookies(
     response: Response,
     *,
@@ -87,13 +98,14 @@ def _set_auth_cookies(
     """
 
     secure = _is_secure_cookie()
+    samesite = _cookie_samesite()
 
     response.set_cookie(
         key=ACCESS_TOKEN_COOKIE,
         value=access_token,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=samesite,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path=AUTH_COOKIE_PATH,
     )
@@ -103,7 +115,7 @@ def _set_auth_cookies(
         value=refresh_token,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=samesite,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path=REFRESH_COOKIE_PATH,
     )
@@ -124,7 +136,7 @@ def _set_oauth_state_cookie(
         value=state,
         httponly=True,
         secure=_is_secure_cookie(),
-        samesite="lax",
+        samesite=_cookie_samesite(),
         max_age=600,
         path=OAUTH_STATE_COOKIE_PATH,
     )
@@ -136,23 +148,35 @@ def _clear_auth_cookies(
     """
     Remove authentication and OAuth-state cookies.
 
-    Cookie paths must match the paths used when
-    the cookies were originally created.
+    Cookie paths and samesite/secure settings must match
+    the parameters used when the cookies were originally created.
     """
+
+    secure = _is_secure_cookie()
+    samesite = _cookie_samesite()
 
     response.delete_cookie(
         key=ACCESS_TOKEN_COOKIE,
         path=AUTH_COOKIE_PATH,
+        secure=secure,
+        httponly=True,
+        samesite=samesite,
     )
 
     response.delete_cookie(
         key=REFRESH_TOKEN_COOKIE,
         path=REFRESH_COOKIE_PATH,
+        secure=secure,
+        httponly=True,
+        samesite=samesite,
     )
 
     response.delete_cookie(
         key=OAUTH_STATE_COOKIE,
         path=OAUTH_STATE_COOKIE_PATH,
+        secure=secure,
+        httponly=True,
+        samesite=samesite,
     )
 
 

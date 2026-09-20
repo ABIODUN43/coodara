@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { API_BASE_URL, api } from "./client";
 
 import type {
   GithubUser,
@@ -11,7 +11,7 @@ import type {
  * The backend owns the OAuth flow and authentication cookies.
  */
 export function loginWithGithub(): void {
-  window.location.href = `${import.meta.env.VITE_API_URL}/auth/github`;
+  window.location.href = `${API_BASE_URL}/auth/github`;
 }
 
 /**
