@@ -57,6 +57,13 @@ If you prefer to configure services manually on Render:
 - **Root Directory**: `apps/frontend`
 - **Build Command**: `pnpm install && pnpm build`
 - **Publish Directory**: `dist`
-- **Rewrite Rules**: Source `/*` $\to$ Destination `/index.html`
 - **Environment Variables**:
-  - `VITE_API_URL`: Your backend URL (e.g., `https://coodara-backend.onrender.com`)
+  - `VITE_API_URL`: `https://coodara-backend.onrender.com/api/v1`
+- **Crucial Step for React Router (Fixes 404 Not Found on /auth/callback):**
+  In the Render Dashboard for your **coodara-frontend** Static Site:
+  1. Go to **Redirects/Rewrites** in the left menu.
+  2. Click **Add Rule**.
+  3. Set **Type**: `Rewrite` *(do NOT use Redirect)*.
+  4. Set **Source**: `/*`
+  5. Set **Destination**: `/index.html`
+  6. Click **Save Changes**.
