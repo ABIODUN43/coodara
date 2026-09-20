@@ -3,14 +3,14 @@
 
 services:
   # --------------------------------------------------------------------------
-  # 1. Coodara FastAPI Backend API Web Service
+  # 1. Coodara FastAPI Backend API Web Service (with Embedded Celery Worker)
   # --------------------------------------------------------------------------
   - type: web
     name: coodara-backend
     runtime: python
     rootDir: .
     buildCommand: pip install -r apps/backend/requirements.txt
-    startCommand: alembic upgrade head && cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: cd apps/backend && python start_server.py
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
@@ -44,42 +44,7 @@ services:
         sync: false
 
   # --------------------------------------------------------------------------
-  # 2. Coodara Celery Worker Service (Background Analysis & Task Queue)
-  # --------------------------------------------------------------------------
-  - type: worker
-    name: coodara-worker
-    runtime: python
-    rootDir: .
-    buildCommand: pip install -r apps/backend/requirements.txt
-    startCommand: cd apps/backend && python start_worker.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.13.0
-      - key: ENVIRONMENT
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: coodara-db
-          property: connectionString
-      - key: REDIS_URL
-        sync: false
-      - key: JWT_SECRET_KEY
-        fromService:
-          type: web
-          name: coodara-backend
-          envVarKey: JWT_SECRET_KEY
-      - key: GITHUB_TOKEN_ENCRYPTION_KEY
-        fromService:
-          type: web
-          name: coodara-backend
-          envVarKey: GITHUB_TOKEN_ENCRYPTION_KEY
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-
-  # --------------------------------------------------------------------------
-  # 3. Coodara Frontend SPA Static Site
+  # 2. Coodara Frontend SPA Static Site
   # --------------------------------------------------------------------------
   - type: web
     name: coodara-frontend
