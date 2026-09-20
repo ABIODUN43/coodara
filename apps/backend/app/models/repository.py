@@ -101,6 +101,7 @@ class Repository(Base):
             name="repository_visibility",
             native_enum=True,
             validate_strings=True,
+            values_callable=lambda enum: [item.value for item in enum],
         ),
         nullable=False,
     )
