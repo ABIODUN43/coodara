@@ -155,18 +155,18 @@ async def list_my_organizations(
     response_model=OrganizationResponse,
 )
 async def get_organization(
-    organization_id: Annotated[
-        int,
-        Path(gt=0),
+    organization_id: str,
+    current_user: Annotated[
+        User,
+        Depends(get_current_active_user),
     ],
-    member: OrganizationMemberDependency,
     db: Annotated[
         AsyncSession,
         Depends(get_db),
     ],
 ) -> Organization:
     """
-    Retrieve an organization.
+    Retrieve an organization by integer ID or slug.
 
     Access requires membership in the organization.
     """
@@ -175,16 +175,40 @@ async def get_organization(
         db,
     )
 
-    try:
-        return await service.get_organization(
+    if organization_id.isdigit():
+        target_id = int(organization_id)
+        try:
+            org = await service.get_organization(
+                target_id,
+            )
+        except OrganizationNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Organization not found.",
+            ) from exc
+    else:
+        org = await service.organization_repository.get_by_slug(
             organization_id,
         )
+        if org is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Organization not found.",
+            )
+        target_id = org.id
 
-    except OrganizationNotFoundError as exc:
+    member = await service.organization_member_repository.get_member(
+        organization_id=target_id,
+        user_id=current_user.id,
+    )
+
+    if member is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found.",
-        ) from exc
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this organization.",
+        )
+
+    return org
 
 
 @router.delete(

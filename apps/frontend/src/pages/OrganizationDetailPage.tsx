@@ -34,7 +34,35 @@ export function OrganizationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const { refetch: refetchGlobalProjects } = useProject();
+  const {
+    organizations,
+    activeProject,
+    loading: orgsLoading,
+    setActiveProject,
+    refetch: refetchGlobalProjects,
+  } = useProject();
+
+  const numericId =
+    orgId && /^\d+$/.test(orgId.trim()) ? Number(orgId.trim()) : null;
+
+  const matchedOrg =
+    organizations.find(
+      (o) =>
+        (numericId !== null && o.id === numericId) ||
+        o.slug?.toLowerCase() === orgId?.toLowerCase() ||
+        o.name.toLowerCase() === orgId?.toLowerCase() ||
+        String(o.id) === orgId
+    ) ??
+    (activeProject &&
+    ((numericId !== null && activeProject.id === numericId) ||
+      activeProject.slug?.toLowerCase() === orgId?.toLowerCase() ||
+      activeProject.name.toLowerCase() === orgId?.toLowerCase() ||
+      String(activeProject.id) === orgId)
+      ? activeProject
+      : null);
+
+  const effectiveId = numericId ?? matchedOrg?.id ?? null;
+
   const [tab, setTab] = useState<Tab>("overview");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -68,23 +96,88 @@ export function OrganizationDetailPage() {
 
   useEffect(() => {
     if (!orgId) return;
+
+    // If orgId is a slug and organizations are still loading from context, wait
+    if (numericId === null && orgsLoading && !matchedOrg) {
+      setLoading(true);
+      return;
+    }
+
+    let isMounted = true;
     setLoading(true);
     setLoadError(null);
-    Promise.all([
-      getOrganization(orgId),
-      listRepositories(orgId, 1, 100),
-      getOrganizationOverview(Number(orgId)).catch(() => null),
-    ])
-      .then(([orgData, repoData, overviewData]) => {
+
+    // If we have matchedOrg from context, pre-populate immediately
+    if (matchedOrg) {
+      setOrg(matchedOrg);
+    }
+
+    const targetId = effectiveId !== null ? String(effectiveId) : orgId;
+
+    const fetchOrg = getOrganization(targetId)
+      .then((orgData) => {
+        if (!isMounted) return orgData;
         setOrg(orgData);
-        setRepos(repoData.items);
-        if (overviewData) {
+        if (activeProject?.id !== orgData.id) {
+          setActiveProject(orgData);
+        }
+        return orgData;
+      })
+      .catch((err) => {
+        if (matchedOrg) {
+          return matchedOrg;
+        }
+        throw err;
+      });
+
+    const fetchRepos = listRepositories(targetId, 1, 100)
+      .then((repoData) => {
+        if (isMounted) {
+          setRepos(repoData.items ?? []);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load organization repositories:", err);
+        if (isMounted) {
+          setRepos([]);
+        }
+      });
+
+    const fetchOverview = (
+      effectiveId !== null
+        ? getOrganizationOverview(effectiveId)
+        : Number.isInteger(Number(targetId))
+        ? getOrganizationOverview(Number(targetId))
+        : Promise.resolve(null)
+    )
+      .then((overviewData) => {
+        if (isMounted && overviewData) {
           setOverview(overviewData);
         }
       })
-      .catch(() => setLoadError("Couldn't load this organization."))
-      .finally(() => setLoading(false));
-  }, [orgId]);
+      .catch(() => null);
+
+    Promise.allSettled([fetchOrg, fetchRepos, fetchOverview])
+      .then(([orgResult]) => {
+        if (!isMounted) return;
+        if (orgResult.status === "rejected" && !matchedOrg && !org) {
+          const detail =
+            orgResult.reason?.response?.data?.detail ??
+            orgResult.reason?.message ??
+            "Couldn't load this organization.";
+          setLoadError(typeof detail === "string" ? detail : "Couldn't load this organization.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [orgId, effectiveId, orgsLoading]);
 
   const topRepos = repos.slice(0, 3);
 
@@ -133,18 +226,18 @@ export function OrganizationDetailPage() {
 };
 
 function RepoRow({ repo }: { repo: Repository }) {
-  const [org, name] = repo.full_name.split("/");
+  const [ownerName, repoShortName] = repo.full_name.split("/");
   return (
     <button
-      onClick={() => navigate(`/dashboard/organizations/${orgId}/repositories/${repo.id}/analysis`)}
+      onClick={() => navigate(`/dashboard/organizations/${org?.id ?? orgId}/repositories/${repo.id}/analysis`)}
       className="flex w-full cursor-pointer items-center gap-3.5 border-b border-[var(--cd-border-soft)] px-5 py-3.5 text-left last:border-b-0 hover:bg-[var(--cd-sunken)]"
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <RepoIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--cd-ink-faint)]" />
           <span className="truncate font-mono text-[13px] text-[var(--cd-ink)]">
-            <span className="text-[var(--cd-ink-faint)]">{org}/</span>
-            <b className="font-semibold">{name}</b>
+            <span className="text-[var(--cd-ink-faint)]">{ownerName}/</span>
+            <b className="font-semibold">{repoShortName}</b>
           </span>
         </div>
         {repo.description && (
@@ -183,12 +276,20 @@ function RepoRow({ repo }: { repo: Repository }) {
           <p className="text-[13px] font-medium text-rose-700 dark:text-rose-400">
             {loadError ?? "Organization not found."}
           </p>
-          <button
-            onClick={() => navigate("/dashboard/organizations")}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
-          >
-            Back to organizations
-          </button>
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <button
+              onClick={() => navigate("/dashboard/organizations")}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
+            >
+              Back to organizations
+            </button>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-3 py-1.5 text-[12px] font-medium text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)]"
+            >
+              Command center
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -231,9 +332,10 @@ function RepoRow({ repo }: { repo: Repository }) {
           </button>
           <button
             onClick={() => {
-              if (!orgId) return;
+              const targetOrg = org?.id ?? orgId;
+              if (!targetOrg) return;
               navigate(
-                `/dashboard/organizations/${orgId}/repositories`
+                `/dashboard/organizations/${targetOrg}/repositories`
               );
             }}
             className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[var(--cd-accent-hover)]"
