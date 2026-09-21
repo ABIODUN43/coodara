@@ -110,7 +110,7 @@ from app.schemas.architecture import (
 )
 from datetime import datetime, timezone
 from pathlib import Path as PyPath
-from app.analysis.workspace import get_repository_storage_path
+from app.analysis.workspace import ensure_repository_checkout, get_repository_storage_path
 from app.architecture.classifier import ArchitectureClassifier
 from app.architecture.remediation import ArchitectureRemediationEngine
 from app.architecture.adr_scanner import ADRScanner
@@ -1242,101 +1242,7 @@ async def get_architecture_style(
 
 def _build_disk_file_tree(repo_dir: PyPath | None) -> ArchitectureFileNode:
     """Construct authentic file tree from disk directory, or empty root if unanalyzed/empty."""
-    if not repo_dir or not repo_dir.exists() or not repo_dir.is_dir():
-        return ArchitectureFileNode(
-            id="root",
-            name="repository",
-            path="",
-            type="directory",
-            has_bad_architecture=False,
-            violation_count=0,
-            violations=[],
-            children=[],
-        )
-
-    ignored_dirs = {".git", "node_modules", ".venv", "__pycache__", "dist", "build", ".next", ".cache", "coverage"}
-    dir_map: dict[str, list[ArchitectureFileNode]] = {}
-
-    for file_path in repo_dir.rglob("*"):
-        if any(part in ignored_dirs for part in file_path.parts):
-            continue
-        if file_path.is_file():
-            try:
-                rel = file_path.relative_to(repo_dir).as_posix()
-            except ValueError:
-                continue
-            parts = rel.split("/")
-            dpath = "/".join(parts[:-1]) if len(parts) > 1 else ""
-            ext = file_path.suffix.lower().lstrip(".")
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")[:60000]
-                size = file_path.stat().st_size
-            except Exception:
-                content = ""
-                size = 0
-
-            fn = ArchitectureFileNode(
-                id=rel,
-                name=parts[-1],
-                path=rel,
-                type="file",
-                language=ext or "text",
-                size=size,
-                content=content,
-                has_bad_architecture=False,
-                violation_count=0,
-                violations=[],
-            )
-            dir_map.setdefault(dpath, []).append(fn)
-
-    if not dir_map:
-        return ArchitectureFileNode(
-            id="root",
-            name="repository",
-            path="",
-            type="directory",
-            has_bad_architecture=False,
-            violation_count=0,
-            violations=[],
-            children=[],
-        )
-
-    created_dirs: dict[str, ArchitectureFileNode] = {}
-    for dpath, children in sorted(dir_map.items(), key=lambda x: -len(x[0])):
-        if not dpath:
-            continue
-        dir_node = ArchitectureFileNode(
-            id=dpath,
-            name=dpath.split("/")[-1],
-            path=dpath,
-            type="directory",
-            has_bad_architecture=False,
-            violation_count=0,
-            violations=[],
-            children=children,
-        )
-        created_dirs[dpath] = dir_node
-
-    root_children: list[ArchitectureFileNode] = list(dir_map.get("", []))
-    for dpath, dnode in created_dirs.items():
-        parent = "/".join(dpath.split("/")[:-1])
-        if parent in created_dirs:
-            if created_dirs[parent].children is None:
-                created_dirs[parent].children = []
-            created_dirs[parent].children.append(dnode)
-        elif not parent:
-            root_children.append(dnode)
-
-    return ArchitectureFileNode(
-        id="root",
-        name="repository",
-        path="",
-        type="directory",
-        has_bad_architecture=False,
-        violation_count=0,
-        violations=[],
-        children=root_children,
-    )
+    return _build_annotated_disk_file_tree(repo_dir, issues=None, parsed_nodes=None)
 
 
 def _build_annotated_disk_file_tree(
@@ -1389,7 +1295,7 @@ def _build_annotated_disk_file_tree(
     for root, dirs, files in os.walk(str(repo_dir)):
         dirs[:] = [d for d in dirs if d not in ignored_dirs and not d.startswith(".")]
         try:
-            rel_root = Path(root).relative_to(repo_dir).as_posix()
+            rel_root = PyPath(root).relative_to(repo_dir).as_posix()
         except ValueError:
             continue
         rel_root = "" if rel_root == "." else rel_root
@@ -1400,7 +1306,7 @@ def _build_annotated_disk_file_tree(
             rel_path = f"{rel_root}/{fname}" if rel_root else fname
             clean_rel = rel_path.lower()
             ext = fname.split(".")[-1].lower() if "." in fname else "text"
-            fpath = Path(root) / fname
+            fpath = PyPath(root) / fname
 
             try:
                 size = fpath.stat().st_size
@@ -1456,56 +1362,70 @@ def _build_annotated_disk_file_tree(
             children=[],
         )
 
-    # Build directory hierarchy bottom-up, bubbling has_bad_architecture
+    # Build complete directory hierarchy ensuring all ancestor directories exist
     created_dirs: dict[str, ArchitectureFileNode] = {}
-    sorted_dpaths = sorted(dir_map.keys(), key=lambda x: -len(x))
+    root_children: list[ArchitectureFileNode] = []
 
-    for dpath in sorted_dpaths:
-        if not dpath:
-            continue
-        children = dir_map[dpath]
-        has_bad_child = any(c.has_bad_architecture for c in children)
-        v_count = sum(c.violation_count for c in children)
-
+    def ensure_dir(dpath: str) -> ArchitectureFileNode:
+        if dpath in created_dirs:
+            return created_dirs[dpath]
+        parts = dpath.split("/")
+        parent_path = "/".join(parts[:-1]) if len(parts) > 1 else ""
         dir_node = ArchitectureFileNode(
             id=dpath,
-            name=dpath.split("/")[-1],
+            name=parts[-1],
             path=dpath,
             type="directory",
-            has_bad_architecture=has_bad_child,
-            violation_count=v_count,
+            has_bad_architecture=False,
+            violation_count=0,
             violations=[],
-            children=children,
+            children=[],
         )
         created_dirs[dpath] = dir_node
+        if parent_path:
+            parent_node = ensure_dir(parent_path)
+            if parent_node.children is None:
+                parent_node.children = []
+            parent_node.children.append(dir_node)
+        else:
+            root_children.append(dir_node)
+        return dir_node
 
-    root_children: list[ArchitectureFileNode] = list(dir_map.get("", []))
-    for dpath, dnode in created_dirs.items():
-        parts = dpath.split("/")
-        parent = "/".join(parts[:-1])
-        if parent in created_dirs:
-            if created_dirs[parent].children is None:
-                created_dirs[parent].children = []
-            created_dirs[parent].children.append(dnode)
-            if dnode.has_bad_architecture:
-                created_dirs[parent].has_bad_architecture = True
-                created_dirs[parent].violation_count += dnode.violation_count
-        elif not parent:
-            root_children.append(dnode)
+    for dpath, file_list in dir_map.items():
+        if dpath:
+            dnode = ensure_dir(dpath)
+            if dnode.children is None:
+                dnode.children = []
+            dnode.children.extend(file_list)
+        else:
+            root_children.extend(file_list)
 
-    root_has_bad = any(c.has_bad_architecture for c in root_children)
-    root_v_count = sum(c.violation_count for c in root_children)
+    def bubble_bad_architecture(node: ArchitectureFileNode) -> tuple[int, int]:
+        bad_count = 1 if (node.type == "file" and node.has_bad_architecture) else 0
+        v_count = node.violation_count
+        if node.children:
+            for child in node.children:
+                c_bad, c_v = bubble_bad_architecture(child)
+                bad_count += c_bad
+                v_count += c_v
+            if bad_count > 0:
+                node.has_bad_architecture = True
+            node.violation_count = v_count
+        return bad_count, v_count
 
-    return ArchitectureFileNode(
+    root = ArchitectureFileNode(
         id="root",
         name="repository",
         path="",
         type="directory",
-        has_bad_architecture=root_has_bad,
-        violation_count=root_v_count,
+        has_bad_architecture=False,
+        violation_count=0,
         violations=[],
         children=root_children,
     )
+    bubble_bad_architecture(root)
+
+    return root
 
 
 def _build_file_tree_from_graph(
@@ -1650,6 +1570,22 @@ async def get_architecture_file_tree(
     service = _create_architecture_service(db)
     repo_dir = get_repository_storage_path(repository_id)
 
+    # Recreate repository checkout if missing on disk after ephemeral container restart
+    if not (repo_dir.is_dir() and any(repo_dir.iterdir())):
+        try:
+            repo_model = await service.repository_repository.get_by_organization_and_id(
+                organization_id=organization_id,
+                repository_id=repository_id,
+            )
+            if repo_model and repo_model.clone_url:
+                repo_dir = ensure_repository_checkout(
+                    repository_id=repository_id,
+                    clone_url=repo_model.clone_url,
+                    branch=repo_model.default_branch,
+                )
+        except Exception:
+            pass
+
     try:
         snapshot = await service.get_architecture(
             organization_id=organization_id,
@@ -1705,6 +1641,24 @@ async def get_architecture_file_content(
     Retrieve authentic source file content safely with path traversal defenses.
     """
     repo_dir = get_repository_storage_path(repository_id)
+
+    # Recreate repository checkout if missing on disk after ephemeral container restart
+    if not (repo_dir.is_dir() and any(repo_dir.iterdir())):
+        try:
+            service = _create_architecture_service(db)
+            repo_model = await service.repository_repository.get_by_organization_and_id(
+                organization_id=organization_id,
+                repository_id=repository_id,
+            )
+            if repo_model and repo_model.clone_url:
+                repo_dir = ensure_repository_checkout(
+                    repository_id=repository_id,
+                    clone_url=repo_model.clone_url,
+                    branch=repo_model.default_branch,
+                )
+        except Exception:
+            pass
+
     clean_path = path.replace("\\", "/").lstrip("/")
 
     target_file = (repo_dir / clean_path).resolve()

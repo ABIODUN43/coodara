@@ -129,3 +129,118 @@ async def test_file_content_endpoint_traversal_and_success(tmp_path) -> None:
             )
         assert exc_info.value.status_code == 404
 
+
+@pytest.mark.asyncio
+async def test_get_architecture_file_tree_lazy_and_no_path_assertion_error(tmp_path) -> None:
+    """Regression test: Ensure file tree does not trigger FastAPI Path collision and does not load file contents into memory."""
+    import json
+    from app.api.v1.architecture import get_architecture_file_tree
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    dummy_repo_dir = tmp_path / "data" / "repositories" / "42"
+    sample_file = dummy_repo_dir / "clients" / "src" / "sample.py"
+    sample_file.parent.mkdir(parents=True, exist_ok=True)
+    sample_file.write_text("class HeavyComponent:\n    pass\n" * 100, encoding="utf-8")
+
+    dummy_member = MagicMock()
+    dummy_db = MagicMock()
+
+    # Mock snapshot with AST graph
+    mock_snapshot = MagicMock()
+    mock_snapshot.graph = json.dumps({
+        "version": 1,
+        "nodes": [{"id": "clients/src/sample.py", "type": "module"}],
+        "edges": [],
+    })
+    mock_snapshot.issues = []
+
+    with (
+        patch("app.api.v1.architecture.get_repository_storage_path", return_value=dummy_repo_dir),
+        patch("app.api.v1.architecture._create_architecture_service") as mock_svc_cls,
+    ):
+        mock_svc = mock_svc_cls.return_value
+        mock_svc.get_architecture = AsyncMock(return_value=mock_snapshot)
+
+        tree = await get_architecture_file_tree(
+            organization_id=1,
+            repository_id=42,
+            member=dummy_member,
+            db=dummy_db,
+        )
+
+        assert tree.total_files == 1
+        assert tree.root.children is not None
+        assert len(tree.root.children) == 1
+        assert tree.root.children[0].name == "clients"
+
+        # Walk tree to find file node and verify content is None (lazy loading)
+        def find_file(node):
+            if node.type == "file":
+                return node
+            if node.children:
+                for c in node.children:
+                    res = find_file(c)
+                    if res:
+                        return res
+            return None
+
+        file_node = find_file(tree.root)
+        assert file_node is not None
+        assert file_node.name == "sample.py"
+        assert file_node.content is None
+        assert file_node.size > 0
+
+
+@pytest.mark.asyncio
+async def test_get_architecture_file_tree_ephemeral_checkout_recovery(tmp_path) -> None:
+    """Ensure repository checkout is recovered via ensure_repository_checkout when disk is empty after ephemeral container restart."""
+    import json
+    from app.api.v1.architecture import get_architecture_file_tree
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    empty_repo_dir = tmp_path / "data" / "repositories" / "99"
+    # Directory does not exist on disk initially (ephemeral restart)
+
+    populated_repo_dir = tmp_path / "recovered" / "99"
+    sample_file = populated_repo_dir / "src" / "app.py"
+    sample_file.parent.mkdir(parents=True, exist_ok=True)
+    sample_file.write_text("print('recovered')", encoding="utf-8")
+
+    dummy_member = MagicMock()
+    dummy_db = MagicMock()
+
+    mock_repo_model = MagicMock()
+    mock_repo_model.clone_url = "https://github.com/org/repo.git"
+    mock_repo_model.default_branch = "main"
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.graph = json.dumps({
+        "version": 1,
+        "nodes": [{"id": "src/app.py", "type": "module"}],
+        "edges": [],
+    })
+    mock_snapshot.issues = []
+
+    with (
+        patch("app.api.v1.architecture.get_repository_storage_path", return_value=empty_repo_dir),
+        patch("app.api.v1.architecture.ensure_repository_checkout", return_value=populated_repo_dir) as mock_ensure,
+        patch("app.api.v1.architecture._create_architecture_service") as mock_svc_cls,
+    ):
+        mock_svc = mock_svc_cls.return_value
+        mock_svc.repository_repository.get_by_organization_and_id = AsyncMock(return_value=mock_repo_model)
+        mock_svc.get_architecture = AsyncMock(return_value=mock_snapshot)
+
+        tree = await get_architecture_file_tree(
+            organization_id=1,
+            repository_id=99,
+            member=dummy_member,
+            db=dummy_db,
+        )
+
+        mock_ensure.assert_called_once_with(
+            repository_id=99,
+            clone_url="https://github.com/org/repo.git",
+            branch="main",
+        )
+        assert tree is not None
+
