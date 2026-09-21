@@ -496,10 +496,17 @@ class DependencyAnalyzer:
         fqcn_to_path: dict[str, str] = {}
         python_modules_to_path: dict[str, str] = {}
         dirs_to_files: dict[str, list[str]] = {}
+        path_suffixes_to_node: dict[str, str] = {}
 
         for path in files:
             rel = self._relative_path(path, root_path)
             nodes_set.add(rel)
+
+            # Pre-index path-aligned suffixes for O(1) module resolution
+            parts = rel.split("/")
+            for i in range(len(parts)):
+                suffix = "/".join(parts[i:])
+                path_suffixes_to_node.setdefault(suffix, rel)
 
             stem = path.stem
             stems_to_paths.setdefault(stem, []).append(rel)
@@ -531,12 +538,23 @@ class DependencyAnalyzer:
                 except Exception:
                     pass
 
+        dir_suffixes_to_first_file: dict[str, str] = {}
+        for d in sorted(dirs_to_files.keys()):
+            f_list = dirs_to_files[d]
+            if f_list:
+                d_parts = d.split("/")
+                for i in range(len(d_parts)):
+                    suffix = "/".join(d_parts[i:])
+                    dir_suffixes_to_first_file.setdefault(suffix, f_list[0])
+
         return {
             "nodes_set": nodes_set,
             "stems_to_paths": stems_to_paths,
             "fqcn_to_path": fqcn_to_path,
             "python_modules_to_path": python_modules_to_path,
             "dirs_to_files": dirs_to_files,
+            "path_suffixes_to_node": path_suffixes_to_node,
+            "dir_suffixes_to_first_file": dir_suffixes_to_first_file,
         }
 
     def _resolve_target(
@@ -555,6 +573,8 @@ class DependencyAnalyzer:
         fqcn_to_path: dict[str, str] = symbol_index["fqcn_to_path"]  # type: ignore
         python_modules_to_path: dict[str, str] = symbol_index["python_modules_to_path"]  # type: ignore
         dirs_to_files: dict[str, list[str]] = symbol_index["dirs_to_files"]  # type: ignore
+        path_suffixes_to_node: dict[str, str] = symbol_index.get("path_suffixes_to_node", {})  # type: ignore
+        dir_suffixes_to_first_file: dict[str, str] = symbol_index.get("dir_suffixes_to_first_file", {})  # type: ignore
 
         clean_target = target.strip()
         source_dir = Path(source_rel).parent.as_posix()
@@ -592,9 +612,12 @@ class DependencyAnalyzer:
                 return fqcn_to_path[pkg]
 
         as_slash = clean_target.replace(".", "/")
-        for node in nodes_set:
-            if node.endswith(f"{as_slash}.java") or node.endswith(f"{as_slash}.scala"):
-                return node
+        cand_java = f"{as_slash}.java"
+        if cand_java in path_suffixes_to_node:
+            return path_suffixes_to_node[cand_java]
+        cand_scala = f"{as_slash}.scala"
+        if cand_scala in path_suffixes_to_node:
+            return path_suffixes_to_node[cand_scala]
 
         # 5. Python module path: "app.services.order_service" or relative ".utils"
         if clean_target.startswith("."):
@@ -613,22 +636,30 @@ class DependencyAnalyzer:
             return python_modules_to_path[clean_target]
         else:
             py_path = f"{as_slash}.py"
-            for node in nodes_set:
-                if node.endswith(py_path):
-                    return node
+            if py_path in path_suffixes_to_node:
+                return path_suffixes_to_node[py_path]
 
         # 6. Go package directory import: "coodara/pkg/auth" or "pkg/auth"
-        for d, f_list in dirs_to_files.items():
-            if d.endswith(clean_target) or clean_target.endswith(d):
-                if f_list:
-                    return f_list[0]
+        if "/" in clean_target:
+            if clean_target in dir_suffixes_to_first_file:
+                return dir_suffixes_to_first_file[clean_target]
+            target_parts = clean_target.split("/")
+            for i in range(1, len(target_parts)):
+                sub_d = "/".join(target_parts[i:])
+                if sub_d in dirs_to_files and dirs_to_files[sub_d]:
+                    return dirs_to_files[sub_d][0]
+        elif clean_target in dir_suffixes_to_first_file:
+            return dir_suffixes_to_first_file[clean_target]
 
         # 7. Rust module: "crate::auth::token" -> "src/auth/token.rs"
         if "::" in clean_target:
             rust_path = clean_target.replace("crate::", "").replace("::", "/")
-            for node in nodes_set:
-                if node.endswith(f"{rust_path}.rs") or node.endswith(f"{rust_path}/mod.rs"):
-                    return node
+            rust_cand = f"{rust_path}.rs"
+            if rust_cand in path_suffixes_to_node:
+                return path_suffixes_to_node[rust_cand]
+            rust_mod_cand = f"{rust_path}/mod.rs"
+            if rust_mod_cand in path_suffixes_to_node:
+                return path_suffixes_to_node[rust_mod_cand]
 
         # 8. Single class / stem match fallback (if unique in repo)
         stem_target = clean_target.split(".")[-1].split("::")[-1]
