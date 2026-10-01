@@ -71,9 +71,7 @@ export function RepositoriesSection() {
       return;
     }
 
-    navigate(
-      `/dashboard/organizations/${activeProject.id}/repositories/${repositoryId}/analysis`,
-    );
+    navigate(`/repositories/${repositoryId}`);
   }
 
   return (

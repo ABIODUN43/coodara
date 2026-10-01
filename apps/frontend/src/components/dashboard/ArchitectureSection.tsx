@@ -539,8 +539,8 @@ export function ArchitectureSection({ data }: Props) {
 
                             <button
                               onClick={() => {
-                                if (orgId) {
-                                  navigate(`/dashboard/organizations/${orgId}/repositories/${selectedNode.repoId}/analysis`);
+                                if (selectedNode.repoId) {
+                                  navigate(`/repositories/${selectedNode.repoId}`);
                                 }
                               }}
                               className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-3 py-2 text-[11.5px] font-medium text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)] transition-colors"

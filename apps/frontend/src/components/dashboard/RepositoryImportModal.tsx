@@ -362,9 +362,7 @@ export function RepositoryImportModal() {
       closeRepositoryImport();
       resetForm();
 
-      navigate(
-        `/dashboard/organizations/${currentOrganizationId}/repositories/${repository.id}/analysis`,
-      );
+      navigate(`/repositories/${repository.id}`);
     } catch (error) {
       setImportError(
         getErrorMessage(error),

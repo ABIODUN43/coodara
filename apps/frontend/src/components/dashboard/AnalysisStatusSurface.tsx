@@ -10,7 +10,6 @@ interface AnalysisStatusSurfaceProps {
 
 export function AnalysisStatusSurface({
   analysisQueue,
-  organizationId,
   repos,
 }: AnalysisStatusSurfaceProps) {
   if (!analysisQueue || analysisQueue.length === 0) return null;
@@ -45,7 +44,7 @@ export function AnalysisStatusSurface({
 
         {matchedRepo && (
           <Link
-            to={`/dashboard/organizations/${organizationId}/repositories/${matchedRepo.id}/analysis`}
+            to={`/repositories/${matchedRepo.id}`}
             className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-[8px] bg-blue-600 px-3 py-1.5 text-[12px] font-medium text-white shadow-xs hover:bg-blue-700 transition-colors"
           >
             <span>View Analysis Details</span>

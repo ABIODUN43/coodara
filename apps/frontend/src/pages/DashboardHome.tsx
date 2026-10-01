@@ -115,9 +115,7 @@ export function DashboardHome() {
 
   const handleAnalyzeActiveRepo = () => {
     if (activeRepo) {
-      navigate(
-        `/dashboard/organizations/${activeProject.id}/repositories/${activeRepo.id}/analysis`,
-      );
+      navigate(`/repositories/${activeRepo.id}`);
     } else {
       openRepositoryImport();
     }

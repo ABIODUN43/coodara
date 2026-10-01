@@ -108,15 +108,18 @@ export function TopNavbar({ onOpenSidebar }: TopNavbarProps) {
   // Dynamic context breadcrumb calculation
   const path = location.pathname;
   let currentSection = "Dashboard";
-  if (path.includes("/repositories")) currentSection = "Repositories";
-  else if (path.includes("/organizations")) currentSection = "Organizations";
-  else if (path.includes("/risks")) currentSection = "Architectural Risks";
-  else if (path.includes("/recommendations")) currentSection = "Recommendations";
-  else if (path.includes("/chat") || path.includes("/ai-assistant")) currentSection = "Chat";
-  else if (path.includes("/memory")) currentSection = "Memory";
-  else if (path.includes("/history")) currentSection = "History";
-  else if (path.includes("/reports")) currentSection = "Reports";
-  else if (path.includes("/settings")) currentSection = "Settings";
+  if (path.startsWith("/lab")) currentSection = "Architecture Lab";
+  else if (path.startsWith("/findings") || path.startsWith("/risks") || path.startsWith("/recommendations")) currentSection = "Findings";
+  else if (path.startsWith("/repositories")) currentSection = "Repositories";
+  else if (path.startsWith("/architecture")) currentSection = "Architecture Map";
+  else if (path.startsWith("/explorer")) currentSection = "Codebase Explorer";
+  else if (path.startsWith("/chat") || path.startsWith("/ai-assistant")) currentSection = "Architecture Chat";
+  else if (path.startsWith("/activity") || path.startsWith("/history") || path.startsWith("/memory")) currentSection = "Activity & Decisions";
+  else if (path.startsWith("/reports")) currentSection = "Reports";
+  else if (path.startsWith("/integrations")) currentSection = "Integrations";
+  else if (path.startsWith("/settings/workspace")) currentSection = "Workspace Settings";
+  else if (path.startsWith("/settings/project")) currentSection = "Project Settings";
+  else if (path.startsWith("/settings")) currentSection = "Settings";
   else if (path === "/dashboard") currentSection = "Overview";
 
   const ActionIcon = action?.icon ?? Plus;

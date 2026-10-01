@@ -13,7 +13,6 @@ export function ArchitectureRisksCard({
   issues,
   criticalCount,
   warningCount,
-  organizationId,
 }: ArchitectureRisksCardProps) {
   const navigate = useNavigate();
   const hasIssues = issues && issues.length > 0;
@@ -32,7 +31,7 @@ export function ArchitectureRisksCard({
         </div>
 
         <Link
-          to={organizationId ? `/dashboard/organizations/${organizationId}/risks` : `/dashboard/risks`}
+          to="/findings"
           className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--cd-accent)] hover:underline"
         >
           <span>View all</span>
@@ -93,11 +92,7 @@ export function ArchitectureRisksCard({
                 key={`${item.issue.id}-${idx}`}
                 type="button"
                 onClick={() => {
-                  navigate(
-                    organizationId
-                      ? `/dashboard/organizations/${organizationId}/risks?finding=${item.issue.id}`
-                      : `/dashboard/risks?finding=${item.issue.id}`
-                  );
+                  navigate(`/findings?finding=${item.issue.id}`);
                 }}
                 className="group flex w-full items-start justify-between gap-3 py-2.5 text-left transition-colors hover:bg-[var(--cd-sunken)]/40 rounded px-1.5 cursor-pointer first:pt-1 last:pb-0"
               >

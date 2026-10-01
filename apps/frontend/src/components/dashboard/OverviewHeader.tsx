@@ -60,7 +60,7 @@ export function OverviewHeader({
 
   const handleAnalyze = () => {
     if (primaryRepo) {
-      navigate(`/dashboard/organizations/${organizationId}/repositories/${primaryRepo.id}/analysis`);
+      navigate(`/repositories/${primaryRepo.id}`);
     } else {
       onOpenImport();
     }

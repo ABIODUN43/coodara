@@ -8,13 +8,13 @@ import {
   GitBranch,
   Network,
   AlertTriangle,
-  Sparkles,
-  GitCompare,
+  FlaskConical,
+  Code2,
+  Plug,
+  Users,
   MessageSquare,
-  Brain,
   History,
   FileText,
-  Settings,
   Plus,
   Sun,
   Moon,
@@ -134,49 +134,49 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       {
         id: "nav-architecture",
         category: "Architecture",
-        label: "Architecture Intelligence",
+        label: "Architecture Map",
         description: "Explore modules, dependencies & graph topology",
         icon: Network,
         action: () => {
-          navigate("/dashboard");
+          navigate("/architecture");
           onClose();
         },
       },
       {
-        id: "nav-risks",
+        id: "nav-findings",
         category: "Architecture",
-        label: "Architectural Risks",
+        label: "Architectural Findings",
         description: "Inspect circular dependencies, hotspots & coupling",
         icon: AlertTriangle,
         action: () => {
-          navigate("/dashboard/risks");
+          navigate("/findings");
           onClose();
         },
       },
       {
-        id: "nav-recommendations",
+        id: "nav-lab",
         category: "Architecture",
-        label: "Recommendations",
-        description: "Actionable remediation plans from AI analysis",
-        icon: Sparkles,
+        label: "Architecture Lab",
+        description: "Formulate hypotheses and run controlled experiments",
+        icon: FlaskConical,
         action: () => {
-          navigate("/dashboard/recommendations");
-          onClose();
-        },
-      },
-      {
-        id: "nav-simulation",
-        category: "Architecture",
-        label: "What-if Simulation",
-        description: "Simulate refactoring impact across repositories",
-        icon: GitCompare,
-        action: () => {
-          navigate("/dashboard");
+          navigate("/lab");
           onClose();
         },
       },
 
       // Engineering
+      {
+        id: "nav-explorer",
+        category: "Engineering",
+        label: "Codebase Explorer",
+        description: "Inspect file trees, symbols and component couplings",
+        icon: Code2,
+        action: () => {
+          navigate("/explorer");
+          onClose();
+        },
+      },
       {
         id: "nav-chat",
         category: "Engineering",
@@ -184,29 +184,18 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         description: "Query codebase architecture with grounded AI assistant",
         icon: MessageSquare,
         action: () => {
-          navigate("/dashboard/chat");
+          navigate("/chat");
           onClose();
         },
       },
       {
-        id: "nav-memory",
+        id: "nav-activity",
         category: "Engineering",
-        label: "Architecture Memory",
-        description: "Track architectural decisions and component history",
-        icon: Brain,
-        action: () => {
-          navigate("/dashboard/memory");
-          onClose();
-        },
-      },
-      {
-        id: "nav-history",
-        category: "Engineering",
-        label: "History & Evolution",
-        description: "View timeline of architecture changes across snapshots",
+        label: "Activity & Decisions",
+        description: "View timeline of changes, ADRs, and decision records",
         icon: History,
         action: () => {
-          navigate("/dashboard/history");
+          navigate("/activity");
           onClose();
         },
       },
@@ -217,18 +206,40 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         description: "Export executive summaries and compliance reports",
         icon: FileText,
         action: () => {
-          navigate("/dashboard/reports");
+          navigate("/reports");
           onClose();
         },
       },
       {
-        id: "nav-settings",
+        id: "nav-integrations",
         category: "Engineering",
-        label: "Settings",
-        description: "Configure thresholds, members, and integrations",
-        icon: Settings,
+        label: "Integrations",
+        description: "Telemetry, cloud pricing snapshots, and repo connectors",
+        icon: Plug,
         action: () => {
-          navigate("/dashboard/settings");
+          navigate("/integrations");
+          onClose();
+        },
+      },
+      {
+        id: "nav-settings-workspace",
+        category: "Engineering",
+        label: "Workspace Settings",
+        description: "Configure workspace members, roles, and policies",
+        icon: Users,
+        action: () => {
+          navigate("/settings/workspace");
+          onClose();
+        },
+      },
+      {
+        id: "nav-settings-project",
+        category: "Engineering",
+        label: "Project Settings",
+        description: "Configure quality gates, CI/CD, and pricing catalogs",
+        icon: Building2,
+        action: () => {
+          navigate("/settings/project");
           onClose();
         },
       },

@@ -234,7 +234,7 @@ export function RepositoriesPage() {
                 className="flex items-center justify-between border-b border-[var(--cd-border-soft)] px-5 py-3.5 last:border-b-0 hover:bg-[var(--cd-sunken)] transition-colors"
               >
                 <Link
-                  to={`/dashboard/organizations/${organizationId}/repositories/${repository.id}/analysis`}
+                  to={`/repositories/${repository.id}`}
                   className="min-w-0 flex-1 cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
@@ -279,7 +279,7 @@ export function RepositoriesPage() {
                   </Link>
 
                   <Link
-                    to={`/dashboard/organizations/${organizationId}/repositories/${repository.id}/analysis`}
+                    to={`/repositories/${repository.id}`}
                     className="flex items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:border-[var(--cd-accent)] hover:text-[var(--cd-accent)] transition-colors"
                   >
                     <FileCode className="h-3.5 w-3.5 text-emerald-500" />

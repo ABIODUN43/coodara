@@ -8,14 +8,13 @@ import {
   GitBranch,
   Network,
   AlertTriangle,
-  Sparkles,
-  GitCompare,
+  FlaskConical,
   Code2,
   MessageSquare,
-  Brain,
   History,
   FileText,
-  Settings,
+  Plug,
+  Users,
   ChevronDown,
   Check,
   PanelLeftClose,
@@ -90,65 +89,42 @@ export function Sidebar({
 
   const repoCount = dashboardData.totalRepos;
   const riskCount = dashboardData.criticalFindingsCount + dashboardData.warningFindingsCount;
-  const recCount = dashboardData.allRecommendations?.length ?? 0;
   const analyzedCount = dashboardData.analyzedReposCount;
   const maxQuota = 500;
   const quotaPct = Math.min(100, Math.max(3, (analyzedCount / maxQuota) * 100));
 
   const sections: NavSection[] = [
     {
-      title: "Workspace",
+      title: "Core",
       items: [
         {
-          label: "Overview",
+          label: "Dashboard",
           href: "/dashboard",
           icon: LayoutGrid,
           matchExact: true,
         },
         {
           label: "Repositories",
-          href: activeProject
-            ? `/dashboard/organizations/${activeProject.id}/repositories`
-            : "/dashboard/organizations",
+          href: "/repositories",
           icon: GitBranch,
           count: repoCount > 0 ? repoCount : undefined,
         },
         {
-          label: "Organizations",
-          href: "/dashboard/organizations",
-          icon: Building2,
-          matchExact: true,
-        },
-      ],
-    },
-    {
-      title: "Architecture",
-      items: [
-        {
           label: "Architecture",
-          href: "/dashboard",
+          href: "/architecture",
           icon: Network,
         },
         {
-          label: "Risks",
-          href: "/dashboard/risks",
+          label: "Findings",
+          href: "/findings",
           icon: AlertTriangle,
           count: riskCount > 0 ? riskCount : undefined,
           badgeVariant: riskCount > 0 ? "risk" : "default",
         },
         {
-          label: "Recommendations",
-          href: "/dashboard/recommendations",
-          icon: Sparkles,
-          count: recCount > 0 ? recCount : undefined,
-          badgeVariant: "default",
-        },
-        {
-          label: "What-if Simulation",
-          href: activeProject
-            ? `/dashboard/organizations/${activeProject.id}/repositories`
-            : "/dashboard",
-          icon: GitCompare,
+          label: "Architecture Lab",
+          href: "/lab",
+          icon: FlaskConical,
         },
       ],
     },
@@ -156,39 +132,44 @@ export function Sidebar({
       title: "Engineering",
       items: [
         {
-          label: "Code Studio",
-          href: "/dashboard/chat",
+          label: "Explorer",
+          href: "/explorer",
           icon: Code2,
         },
         {
           label: "Chat",
-          href: "/dashboard/chat",
+          href: "/chat",
           icon: MessageSquare,
         },
         {
-          label: "Memory",
-          href: "/dashboard/memory",
-          icon: Brain,
-        },
-        {
-          label: "History",
-          href: "/dashboard/history",
-          icon: History,
-        },
-        {
           label: "Reports",
-          href: "/dashboard/reports",
+          href: "/reports",
           icon: FileText,
+        },
+        {
+          label: "Activity",
+          href: "/activity",
+          icon: History,
         },
       ],
     },
     {
-      title: "System",
+      title: "Configuration",
       items: [
         {
-          label: "Settings",
-          href: "/dashboard/settings",
-          icon: Settings,
+          label: "Integrations",
+          href: "/integrations",
+          icon: Plug,
+        },
+        {
+          label: "Workspace Settings",
+          href: "/settings/workspace",
+          icon: Users,
+        },
+        {
+          label: "Project Settings",
+          href: "/settings/project",
+          icon: Building2,
         },
       ],
     },
@@ -204,29 +185,42 @@ export function Sidebar({
     if (item.label === "Architecture") {
       return location.pathname.includes("/architecture");
     }
-    if (item.label === "Code Studio") {
-      return location.pathname.includes("/code") || location.pathname.includes("/studio");
+    if (item.label === "Repositories") {
+      return location.pathname.includes("/repositories");
+    }
+    if (item.label === "Architecture") {
+      return location.pathname.includes("/architecture");
+    }
+    if (item.label === "Findings") {
+      return location.pathname.includes("/findings") || location.pathname.includes("/risks");
+    }
+    if (item.label === "Architecture Lab") {
+      return location.pathname.includes("/lab");
+    }
+    if (item.label === "Explorer") {
+      return location.pathname.includes("/explorer");
     }
     if (item.label === "Chat") {
       return location.pathname.includes("/chat") || location.pathname.includes("/ai-assistant");
     }
-    if (item.label === "Risks") {
-      return location.pathname.includes("/risks");
-    }
-    if (item.label === "Recommendations") {
-      return location.pathname.includes("/recommendations");
-    }
-    if (item.label === "Memory") {
-      return location.pathname.includes("/memory");
-    }
-    if (item.label === "History") {
-      return location.pathname.includes("/history");
-    }
     if (item.label === "Reports") {
       return location.pathname.includes("/reports");
     }
-    if (item.label === "Settings") {
-      return location.pathname.includes("/settings");
+    if (item.label === "Activity") {
+      return (
+        location.pathname.includes("/activity") ||
+        location.pathname.includes("/history") ||
+        location.pathname.includes("/memory")
+      );
+    }
+    if (item.label === "Integrations") {
+      return location.pathname.includes("/integrations");
+    }
+    if (item.label === "Workspace Settings") {
+      return location.pathname.includes("/settings/workspace");
+    }
+    if (item.label === "Project Settings") {
+      return location.pathname.includes("/settings/project");
     }
     return location.pathname.startsWith(item.href);
   }

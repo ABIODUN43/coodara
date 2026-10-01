@@ -17,7 +17,6 @@ interface CoodaraFindingCardProps {
 export function CoodaraFindingCard({
   issues,
   recommendations,
-  organizationId,
 }: CoodaraFindingCardProps) {
   const navigate = useNavigate();
 
@@ -122,17 +121,9 @@ export function CoodaraFindingCard({
           size="sm"
           onClick={() => {
             if (topIssue) {
-              navigate(
-                organizationId
-                  ? `/dashboard/organizations/${organizationId}/risks?finding=${topIssue.issue.id}`
-                  : `/dashboard/risks?finding=${topIssue.issue.id}`
-              );
+              navigate(`/findings?finding=${topIssue.issue.id}`);
             } else {
-              navigate(
-                organizationId
-                  ? `/dashboard/organizations/${organizationId}/risks`
-                  : `/dashboard/risks`
-              );
+              navigate(`/findings`);
             }
           }}
           className="gap-1 text-[11.5px]"

@@ -17,7 +17,6 @@ interface RecentArchitectureChangesProps {
 export function RecentArchitectureChanges({
   timelineEvents,
   recentActivities,
-  organizationId,
 }: RecentArchitectureChangesProps) {
   // Merge or fallback to recent activities
   const hasEvents = timelineEvents && timelineEvents.length > 0;
@@ -36,10 +35,10 @@ export function RecentArchitectureChanges({
         </div>
 
         <Link
-          to={`/dashboard/history?orgId=${organizationId}`}
+          to="/activity"
           className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--cd-accent)] hover:underline"
         >
-          <span>History</span>
+          <span>View Activity</span>
           <ArrowRight className="h-3 w-3" />
         </Link>
       </div>

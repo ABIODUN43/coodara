@@ -22,6 +22,7 @@ import {
 } from "@/api/analyses";
 
 import { useAnalysisPolling } from "@/hooks/useAnalysisPolling";
+import { useProject } from "@/context/ProjectContext";
 
 import type { Repository } from "@/types/repository";
 import type { Analysis, AnalysisResult } from "@/types/analysis";
@@ -112,18 +113,15 @@ function formatDate(iso: string | null) {
 }
 
 export function AnalysisPage() {
-  const { orgId, repoId } = useParams<{
-    orgId: string;
-    repoId: string;
+  const { orgId, repoId, id } = useParams<{
+    orgId?: string;
+    repoId?: string;
+    id?: string;
   }>();
+  const { activeProject } = useProject();
 
-  /*
-   * React Router params are technically optional.
-   * The page itself validates them before making real API calls,
-   * while the polling hook receives safe strings for TypeScript.
-   */
-  const safeOrgId = orgId ?? "";
-  const safeRepoId = repoId ?? "";
+  const safeOrgId = orgId || (activeProject?.id ? String(activeProject.id) : "");
+  const safeRepoId = repoId || id || "";
 
   const [repo, setRepo] = useState<Repository | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,7 +137,7 @@ export function AnalysisPage() {
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
 
   async function loadAll() {
-    if (!orgId || !repoId) {
+    if (!safeOrgId || !safeRepoId) {
       setLoadError("Invalid repository URL.");
       setLoading(false);
       return;
@@ -150,8 +148,8 @@ export function AnalysisPage() {
 
     try {
       const [repoData, analysisList] = await Promise.all([
-        getRepository(orgId, repoId),
-        listAnalyses(orgId, repoId, 1, 20),
+        getRepository(safeOrgId, safeRepoId),
+        listAnalyses(safeOrgId, safeRepoId, 1, 20),
       ]);
 
       setRepo(repoData);

@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 
 import { AppLayout } from "@/components/common/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -9,23 +9,35 @@ import AuthCallbackPage from "@/features/auth/pages/AuthCallbackPage";
 
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { DashboardHome } from "@/pages/DashboardHome";
-import { OrganizationsPage } from "@/pages/OrganizationsPage";
-import { OrganizationDetailPage } from "@/pages/OrganizationDetailPage";
 import { RepositoriesPage } from "@/pages/RepositoriesPage";
 import { AnalysisPage } from "@/pages/AnalysisPage";
 import { ArchitecturePage } from "@/pages/ArchitecturePage";
-import { MemoryPage } from "@/pages/MemoryPage";
-import { HistoryPage } from "@/pages/HistoryPage";
+import { FindingsPage } from "@/pages/FindingsPage";
+import { ArchitectureLabPage } from "@/pages/ArchitectureLabPage";
+import { ExplorerPage } from "@/pages/ExplorerPage";
 import { AIAssistantPage } from "@/pages/AIAssistantPage";
-import { RisksPage } from "@/pages/RisksPage";
 import { ReportsPage } from "@/pages/ReportsPage";
-import { RecommendationsPage } from "@/pages/RecommendationsPage";
-import { SettingsPage } from "@/pages/SettingsPage";
+import { ActivityPage } from "@/pages/ActivityPage";
+import { IntegrationsPage } from "@/pages/IntegrationsPage";
+import { WorkspaceSettingsPage } from "@/pages/WorkspaceSettingsPage";
+import { ProjectSettingsPage } from "@/pages/ProjectSettingsPage";
+
+/**
+ * Redirect helper for legacy /dashboard/organizations/:orgId/repositories/:repoId/analysis paths
+ */
+function LegacyRepoAnalysisRedirect() {
+  const { repoId } = useParams<{ repoId?: string }>();
+  if (repoId) {
+    return <Navigate to={`/repositories/${repoId}`} replace />;
+  }
+  return <Navigate to="/repositories" replace />;
+}
 
 export const router = createBrowserRouter([
   {
     element: <AppLayout />,
     children: [
+      // Surface 15: Public / Auth / Onboarding
       {
         path: "/",
         element: <LandingPage />,
@@ -38,132 +50,227 @@ export const router = createBrowserRouter([
         path: "/auth/callback",
         element: <AuthCallbackPage />,
       },
+
+      // Authenticated Surfaces (DashboardLayout)
       {
-        path: "/dashboard",
         element: (
           <ProtectedRoute>
             <DashboardLayout />
           </ProtectedRoute>
         ),
         children: [
+          // Surface 1: Dashboard Portfolio Overview
           {
-            index: true,
+            path: "/dashboard",
             element: <DashboardHome />,
           },
 
+          // Surface 2: Repositories Inventory
           {
-            path: "organizations",
-            element: <OrganizationsPage />,
-          },
-
-          {
-            path: "organizations/:orgId",
-            element: <OrganizationDetailPage />,
-          },
-
-          {
-            path: "organizations/:orgId/repositories",
+            path: "/repositories",
             element: <RepositoriesPage />,
           },
 
+          // Surface 3: Repository Overview
           {
-            path: "organizations/:orgId/repositories/:repoId/analysis",
+            path: "/repositories/:id",
             element: <AnalysisPage />,
           },
 
+          // Surface 4: Architecture Map
           {
-            path: "organizations/:orgId/repositories/:repoId/architecture",
+            path: "/architecture",
             element: <ArchitecturePage />,
           },
 
+          // Surface 5: Architectural Findings
           {
-            path: "organizations/:orgId/repositories/:repoId/memory",
-            element: <MemoryPage />,
+            path: "/findings",
+            element: <FindingsPage />,
           },
 
+          // Surface 6: Finding Detail View
           {
-            path: "organizations/:orgId/repositories/:repoId/history",
-            element: <HistoryPage />,
+            path: "/findings/:id",
+            element: <FindingsPage />,
           },
 
+          // Surface 7: Architecture Lab (Core Experimentation Workspace)
           {
-            path: "memory",
-            element: <MemoryPage />,
+            path: "/lab",
+            element: <ArchitectureLabPage />,
           },
 
+          // Surface 8: Codebase Explorer
           {
-            path: "organizations/:orgId/memory",
-            element: <MemoryPage />,
+            path: "/explorer",
+            element: <ExplorerPage />,
           },
 
+          // Surface 9: Architecture Chat
           {
-            path: "history",
-            element: <HistoryPage />,
-          },
-
-          {
-            path: "organizations/:orgId/history",
-            element: <HistoryPage />,
-          },
-
-          {
-            path: "chat",
+            path: "/chat",
             element: <AIAssistantPage />,
           },
 
+          // Surface 10: Reports
           {
-            path: "organizations/:orgId/chat",
-            element: <AIAssistantPage />,
-          },
-
-          {
-            path: "ai-assistant",
-            element: <AIAssistantPage />,
-          },
-
-          {
-            path: "organizations/:orgId/ai-assistant",
-            element: <AIAssistantPage />,
-          },
-
-          {
-            path: "risks",
-            element: <RisksPage />,
-          },
-
-          {
-            path: "organizations/:orgId/risks",
-            element: <RisksPage />,
-          },
-
-          {
-            path: "reports",
+            path: "/reports",
             element: <ReportsPage />,
           },
 
+          // Surface 11: Activity & Decisions
           {
-            path: "organizations/:orgId/reports",
-            element: <ReportsPage />,
+            path: "/activity",
+            element: <ActivityPage />,
           },
 
+          // Surface 12: Integrations
           {
-            path: "recommendations",
-            element: <RecommendationsPage />,
+            path: "/integrations",
+            element: <IntegrationsPage />,
           },
 
+          // Surface 13: Workspace Settings
           {
-            path: "organizations/:orgId/recommendations",
-            element: <RecommendationsPage />,
+            path: "/settings/workspace",
+            element: <WorkspaceSettingsPage />,
           },
 
+          // Surface 14: Project Settings
           {
-            path: "settings",
-            element: <SettingsPage />,
+            path: "/settings/project",
+            element: <ProjectSettingsPage />,
           },
 
+          // -------------------------------------------------------------------
+          // Backward Compatibility & Deprecation Redirects
+          // -------------------------------------------------------------------
           {
-            path: "organizations/:orgId/settings",
-            element: <SettingsPage />,
+            path: "/settings",
+            element: <Navigate to="/settings/workspace" replace />,
+          },
+          {
+            path: "/risks",
+            element: <Navigate to="/findings" replace />,
+          },
+          {
+            path: "/recommendations",
+            element: <Navigate to="/findings" replace />,
+          },
+          {
+            path: "/memory",
+            element: <Navigate to="/activity?tab=memory" replace />,
+          },
+          {
+            path: "/history",
+            element: <Navigate to="/activity?tab=timeline" replace />,
+          },
+          {
+            path: "/ai-assistant",
+            element: <Navigate to="/chat" replace />,
+          },
+          {
+            path: "/analysis",
+            element: <Navigate to="/repositories" replace />,
+          },
+          {
+            path: "/organizations",
+            element: <Navigate to="/repositories" replace />,
+          },
+
+          // Legacy /dashboard/* prefixes
+          {
+            path: "/dashboard/risks",
+            element: <Navigate to="/findings" replace />,
+          },
+          {
+            path: "/dashboard/recommendations",
+            element: <Navigate to="/findings" replace />,
+          },
+          {
+            path: "/dashboard/memory",
+            element: <Navigate to="/activity?tab=memory" replace />,
+          },
+          {
+            path: "/dashboard/history",
+            element: <Navigate to="/activity?tab=timeline" replace />,
+          },
+          {
+            path: "/dashboard/chat",
+            element: <Navigate to="/chat" replace />,
+          },
+          {
+            path: "/dashboard/ai-assistant",
+            element: <Navigate to="/chat" replace />,
+          },
+          {
+            path: "/dashboard/reports",
+            element: <Navigate to="/reports" replace />,
+          },
+          {
+            path: "/dashboard/settings",
+            element: <Navigate to="/settings/workspace" replace />,
+          },
+          {
+            path: "/dashboard/organizations",
+            element: <Navigate to="/repositories" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId",
+            element: <Navigate to="/repositories" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/repositories",
+            element: <Navigate to="/repositories" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/repositories/:repoId/analysis",
+            element: <LegacyRepoAnalysisRedirect />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/repositories/:repoId/architecture",
+            element: <Navigate to="/architecture" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/repositories/:repoId/memory",
+            element: <Navigate to="/activity?tab=memory" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/repositories/:repoId/history",
+            element: <Navigate to="/activity?tab=timeline" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/memory",
+            element: <Navigate to="/activity?tab=memory" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/history",
+            element: <Navigate to="/activity?tab=timeline" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/chat",
+            element: <Navigate to="/chat" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/ai-assistant",
+            element: <Navigate to="/chat" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/risks",
+            element: <Navigate to="/findings" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/reports",
+            element: <Navigate to="/reports" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/recommendations",
+            element: <Navigate to="/findings" replace />,
+          },
+          {
+            path: "/dashboard/organizations/:orgId/settings",
+            element: <Navigate to="/settings/project" replace />,
           },
         ],
       },

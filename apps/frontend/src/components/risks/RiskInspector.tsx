@@ -16,6 +16,7 @@ import {
   Compass,
   RotateCcw,
   ShieldAlert,
+  FlaskConical,
 } from "lucide-react";
 import type { ArchitectureIssue, ArchitectureComponent } from "@/types/architecture";
 import type { DashboardOverviewData } from "@/hooks/useDashboardOverview";
@@ -121,7 +122,7 @@ export const RiskInspector: React.FC<RiskInspectorProps> = ({
       ? `&component=${encodeURIComponent(evidence.primaryComponent)}`
       : "";
     navigate(
-      `/dashboard/organizations/${orgId}/repositories/${repoId}/architecture?tab=map${compParam}`
+      `/architecture?repoId=${repoId}&tab=map${compParam}`
     );
   };
 
@@ -130,7 +131,25 @@ export const RiskInspector: React.FC<RiskInspectorProps> = ({
       ? `&component=${encodeURIComponent(evidence.primaryComponent)}`
       : "";
     navigate(
-      `/dashboard/organizations/${orgId}/repositories/${repoId}/architecture?tab=studio${compParam}`
+      `/architecture?repoId=${repoId}&tab=studio${compParam}`
+    );
+  };
+
+  const handleInvestigateInLab = () => {
+    navigate(
+      `/lab?findingId=${encodeURIComponent(issue.id)}&repoId=${encodeURIComponent(repoId)}`,
+      {
+        state: {
+          findingId: issue.id,
+          findingTitle: issue.title || issue.description,
+          findingCategory: issue.type,
+          severity: issue.severity,
+          repoId,
+          repoName,
+          primaryComponent: evidence.primaryComponent,
+          filePath: evidence.filePath,
+        },
+      }
     );
   };
 
@@ -139,7 +158,7 @@ export const RiskInspector: React.FC<RiskInspectorProps> = ({
       evidence.primaryComponent ? ` for component ${evidence.primaryComponent}` : ""
     }: Can you explain the structural implications and suggest a safe refactoring plan?`;
 
-    navigate(`/dashboard/organizations/${orgId}/chat`, {
+    navigate(`/chat`, {
       state: {
         repoId,
         findingId: issue.id,
@@ -463,14 +482,23 @@ export const RiskInspector: React.FC<RiskInspectorProps> = ({
 
       {/* Section 6: Next Step Engineering Actions (Docked at bottom) */}
       <div className="border-t border-[var(--cd-border-soft)] p-3 bg-[var(--cd-bg)]/80 space-y-2">
+        <button
+          type="button"
+          onClick={handleInvestigateInLab}
+          className="w-full cursor-pointer flex items-center justify-center gap-2 rounded-lg bg-[var(--cd-accent)] px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors shadow-xs"
+        >
+          <FlaskConical className="h-4 w-4" />
+          <span>Investigate in Architecture Lab</span>
+        </button>
+
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={handleTraceInArchitecture}
-            className="cursor-pointer flex items-center justify-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-2 text-[12px] font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors shadow-xs"
+            className="cursor-pointer flex items-center justify-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-3 py-2 text-[12px] font-semibold text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)] transition-colors shadow-xs"
           >
             <Compass className="h-3.5 w-3.5" />
-            <span>Trace in Architecture</span>
+            <span>Trace in Map</span>
           </button>
 
           <button
