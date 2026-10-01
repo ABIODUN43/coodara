@@ -1,0 +1,33 @@
+{
+  "fixture_id": "18_false_positive_recommendation",
+  "description": "Exact regression fixture for apps/backend/__init__.py false-positive recommendation",
+  "target_component": "apps/backend/__init__.py",
+  "nodes": [
+    "apps/backend/__init__.py",
+    "apps/backend/server.py"
+  ],
+  "target_inbound_callers": [],
+  "target_outbound_dependencies": [],
+  "target_downstream_impact_count": 0,
+  "target_boundary_crossings_count": 0,
+  "target_adr_violations_count": 0,
+  "expected_outcome": "NO_INTERVENTION_REQUIRED",
+  "forbidden_recommendations": [
+    "Dependency Inversion via Domain Port",
+    "Port / Adapter & Dependency Inversion Pattern",
+    "Asynchronous Domain Events"
+  ],
+  "forbidden_symbols": [
+    "IinitpyPort",
+    "IappsbackendinitpyPort",
+    "execute_operation"
+  ],
+  "forbidden_synthetic_adrs": [
+    "ADR-INV-01",
+    "Domain Interface Isolation Contract"
+  ],
+  "forbidden_synthetic_teams": [
+    "Root Team",
+    "@root-team-guild"
+  ]
+}

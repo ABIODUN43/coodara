@@ -1,0 +1,1 @@
+from subsystem_a.core_service import CoreService

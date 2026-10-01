@@ -1,0 +1,9 @@
+{
+  "fixture_id": "adv_04_boundary_violation_tiny_impact",
+  "description": "Cross-subsystem boundary violation with minimal impact (1 caller only)",
+  "target_component": "backend/internal.py",
+  "expected_direct_impact_count": 1,
+  "expected_indirect_impact_count": 0,
+  "expected_boundaries_crossed_count": 1,
+  "exaggerated_blast_radius_forbidden": true
+}

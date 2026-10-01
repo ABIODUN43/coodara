@@ -263,8 +263,8 @@ class AffectedComponentImpact(BaseModel):
     id: str
     name: str
     type: str
-    subsystem: str | None = "Core Subsystem"
-    team: str | None = "Platform Team"
+    subsystem: str | None = None
+    team: str | None = None
     impact_level: str  # "high", "medium", "low"
     impact_depth: int = 1
     reason: str
@@ -289,7 +289,7 @@ class TeamImpactItem(BaseModel):
     team_name: str
     subsystems_owned: list[str] = Field(default_factory=list)
     components_affected_count: int = 1
-    lead_contact: str = "Engineering Guild"
+    lead_contact: str = "Unassigned"
     review_required: bool = True
     impact_summary: str
 

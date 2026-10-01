@@ -1,0 +1,2 @@
+class InternalSecret:
+    pass

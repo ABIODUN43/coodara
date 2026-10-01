@@ -1,19 +1,21 @@
 import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
-type ButtonVariant =
+export type ButtonVariant =
   | "primary"
   | "secondary"
   | "outline"
-  | "ghost";
+  | "ghost"
+  | "destructive";
 
-type ButtonSize =
+export type ButtonSize =
   | "sm"
   | "md"
   | "lg"
-  | "icon-sm";
+  | "icon-sm"
+  | "icon";
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
 };
@@ -29,33 +31,39 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex items-center justify-center rounded-lg font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cd-accent)] focus-visible:ring-offset-2",
+        "inline-flex items-center justify-center font-medium transition-all select-none cursor-pointer",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cd-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--cd-bg)]",
         "disabled:pointer-events-none disabled:opacity-50",
 
         variant === "primary" &&
-          "bg-white text-black hover:bg-zinc-100",
+          "bg-[var(--cd-accent)] text-white shadow-xs hover:bg-[var(--cd-accent-hover)] active:scale-[0.99]",
 
         variant === "secondary" &&
-          "bg-zinc-800 text-white hover:bg-zinc-700",
+          "border border-[var(--cd-border)] bg-[var(--cd-surface)] text-[var(--cd-ink)] shadow-2xs hover:bg-[var(--cd-sunken)] active:bg-[var(--cd-sunken)]",
 
         variant === "outline" &&
-          "border border-zinc-700 bg-transparent text-white hover:bg-zinc-800",
+          "border border-[var(--cd-border)] bg-transparent text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)] hover:text-[var(--cd-ink)]",
 
         variant === "ghost" &&
-          "bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-white",
+          "bg-transparent text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] hover:text-[var(--cd-ink)]",
+
+        variant === "destructive" &&
+          "bg-[var(--cd-risk)] text-white shadow-xs hover:bg-red-700 active:scale-[0.99]",
 
         size === "sm" &&
-          "min-h-9 px-3 py-2 text-sm",
+          "h-7 rounded-[6px] px-2.5 text-xs gap-1.5",
 
         size === "md" &&
-          "min-h-10 px-4 py-2 text-sm",
+          "h-8.5 rounded-[8px] px-3.5 text-[13px] gap-2",
 
         size === "lg" &&
-          "min-h-11 px-6 py-3 text-base",
+          "h-10 rounded-[8px] px-4 text-sm gap-2",
 
         size === "icon-sm" &&
-          "h-8 w-8 p-0",
+          "h-7 w-7 rounded-[6px] p-0",
+
+        size === "icon" &&
+          "h-8.5 w-8.5 rounded-[8px] p-0",
 
         className,
       )}

@@ -1,0 +1,8 @@
+{
+  "fixture_id": "adv_03_high_fan_in_same_subsystem",
+  "description": "High fan-in within same subsystem: 8 callers depend on core_service with zero boundary violations",
+  "target_component": "subsystem_a/core_service.py",
+  "expected_direct_impact_count": 8,
+  "expected_boundaries_crossed_count": 0,
+  "coupling_risk_detected": true
+}

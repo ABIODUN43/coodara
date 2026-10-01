@@ -1,0 +1,14 @@
+{
+  "fixture_id": "07_no_boundary_violation",
+  "description": "Intra-subsystem dependency within backend",
+  "nodes": [
+    "apps/backend/service.py",
+    "apps/backend/repository.py"
+  ],
+  "subsystems": {
+    "apps/backend/service.py": "apps/backend",
+    "apps/backend/repository.py": "apps/backend"
+  },
+  "cross_boundary_edges": [],
+  "boundary_crossings_count": 0
+}

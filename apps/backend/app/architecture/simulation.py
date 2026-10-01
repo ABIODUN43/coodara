@@ -182,6 +182,7 @@ class StructuralConsequenceSet:
 
     evidence: tuple[EvidenceItem, ...]
     confidence: SimulationConfidence
+    target_entity: DirectImpactItem | None = None
 
     # Optional intervention counterfactual delta (only if explicit parameters provided)
     added_nodes: tuple[str, ...] = field(default_factory=tuple)
@@ -305,21 +306,19 @@ class DeterministicSimulationEngine:
         direct_outward = self._outward.get(actual_id, [])
         direct_inward = self._inward.get(actual_id, [])
 
+        # Target entity metadata (isolated from downstream impacts)
+        target_entity = DirectImpactItem(
+            entity_id=actual_id,
+            name=target_name,
+            subsystem=target_subsystem,
+            component_type=target_node.type,
+            relationship="target",
+            reason=f"Target of {intervention_type.value} intervention.",
+            source_path=actual_id,
+        )
+
         direct_impacts: list[DirectImpactItem] = []
         direct_ids: set[str] = {actual_id}
-
-        # Add target component itself
-        direct_impacts.append(
-            DirectImpactItem(
-                entity_id=actual_id,
-                name=target_name,
-                subsystem=target_subsystem,
-                component_type=target_node.type,
-                relationship="target",
-                reason=f"Target of {intervention_type.value} intervention.",
-                source_path=actual_id,
-            )
-        )
 
         for target_id, kind in direct_outward:
             if target_id != actual_id and target_id not in direct_ids:
@@ -626,6 +625,7 @@ class DeterministicSimulationEngine:
             instability_after=i_after,
             evidence=tuple(evidence),
             confidence=confidence,
+            target_entity=target_entity,
             added_nodes=added_nodes,
             removed_nodes=removed_nodes,
             added_edges=added_edges,

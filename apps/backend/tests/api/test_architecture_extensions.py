@@ -288,7 +288,7 @@ async def test_analyze_architectural_impact_simulation_vertical_slice(mock_db: M
         assert res.confidence.runtime_confidence == "UNKNOWN"
 
         # 3. Verify concrete structural facts (NO arbitrary blast-radius percentage)
-        assert res.direct_impact_count == 3  # target + caller (routes) + dep (models)
+        assert res.direct_impact_count == 2  # caller (routes) + dep (models), target excluded from downstream count
         assert not any("% blast radius" in b for b in res.consequence_bullets)
 
         # 4. Verify boundary crossings

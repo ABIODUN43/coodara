@@ -1,0 +1,10 @@
+{
+  "fixture_id": "09_team_metadata_present",
+  "description": "Authentic team ownership metadata explicitly defined in CODEOWNERS",
+  "nodes": [
+    "apps/backend/server.py"
+  ],
+  "has_team_metadata": true,
+  "expected_team": "@platform-core-team",
+  "truth_status": "OBSERVED"
+}

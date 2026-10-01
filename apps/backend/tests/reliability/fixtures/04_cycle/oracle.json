@@ -1,0 +1,33 @@
+{
+  "fixture_id": "04_cycle",
+  "description": "Circular dependency loop a -> b -> c -> a",
+  "nodes": [
+    "a.py",
+    "b.py",
+    "c.py"
+  ],
+  "edges": [
+    {
+      "source": "a.py",
+      "target": "b.py",
+      "kind": "import"
+    },
+    {
+      "source": "b.py",
+      "target": "c.py",
+      "kind": "import"
+    },
+    {
+      "source": "c.py",
+      "target": "a.py",
+      "kind": "import"
+    }
+  ],
+  "has_cycles": true,
+  "cycle_count": 1,
+  "cycle_nodes": [
+    "a.py",
+    "b.py",
+    "c.py"
+  ]
+}

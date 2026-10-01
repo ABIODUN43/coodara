@@ -1,0 +1,12 @@
+{
+  "fixture_id": "adv_01_high_fan_in",
+  "description": "High fan-in component: 12 independent clients depend on core/shared_service.py",
+  "target_component": "core/shared_service.py",
+  "expected_inbound_count": 12,
+  "expected_outbound_count": 0,
+  "expected_direct_impact_count": 12,
+  "expected_indirect_impact_count": 0,
+  "expected_boundaries_crossed_count": 0,
+  "requires_boundary_violation_for_impact": false,
+  "has_meaningful_impact": true
+}

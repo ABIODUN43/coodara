@@ -1,0 +1,21 @@
+{
+  "fixture_id": "06_cross_subsystem_dependency",
+  "description": "Dependency crossing structural boundaries from frontend to backend",
+  "nodes": [
+    "apps/frontend/client.py",
+    "apps/backend/api.py"
+  ],
+  "subsystems": {
+    "apps/frontend/client.py": "apps/frontend",
+    "apps/backend/api.py": "apps/backend"
+  },
+  "cross_boundary_edges": [
+    {
+      "source": "apps/frontend/client.py",
+      "target": "apps/backend/api.py",
+      "from_subsystem": "apps/frontend",
+      "to_subsystem": "apps/backend"
+    }
+  ],
+  "boundary_crossings_count": 1
+}

@@ -1,0 +1,57 @@
+{
+  "fixture_id": "03_transitive_dependency",
+  "description": "Linear dependency chain a -> b -> c",
+  "nodes": [
+    "a.py",
+    "b.py",
+    "c.py"
+  ],
+  "edges": [
+    {
+      "source": "a.py",
+      "target": "b.py",
+      "kind": "import"
+    },
+    {
+      "source": "b.py",
+      "target": "c.py",
+      "kind": "import"
+    }
+  ],
+  "direct_dependencies": {
+    "a.py": [
+      "b.py"
+    ],
+    "b.py": [
+      "c.py"
+    ],
+    "c.py": []
+  },
+  "inbound_callers": {
+    "a.py": [],
+    "b.py": [
+      "a.py"
+    ],
+    "c.py": [
+      "b.py"
+    ]
+  },
+  "transitive_dependencies": {
+    "a.py": [
+      "b.py",
+      "c.py"
+    ],
+    "b.py": [
+      "c.py"
+    ],
+    "c.py": []
+  },
+  "shortest_paths": {
+    "a.py->c.py": [
+      "a.py",
+      "b.py",
+      "c.py"
+    ]
+  },
+  "has_cycles": false
+}

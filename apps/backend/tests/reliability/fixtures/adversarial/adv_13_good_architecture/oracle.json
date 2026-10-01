@@ -1,0 +1,8 @@
+{
+  "fixture_id": "adv_13_good_architecture",
+  "description": "Clean Ports & Adapters architecture with strict inward dependency flow",
+  "target_component": "domain/service.py",
+  "boundary_violations_count": 0,
+  "is_clean_architecture": true,
+  "expected_outcome": "NO_INTERVENTION_REQUIRED"
+}

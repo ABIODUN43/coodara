@@ -1,0 +1,58 @@
+{
+  "fixture_id": "05_multiple_paths",
+  "description": "Diamond dependency graph with multiple paths from a to d",
+  "nodes": [
+    "a.py",
+    "b.py",
+    "c.py",
+    "d.py"
+  ],
+  "edges": [
+    {
+      "source": "a.py",
+      "target": "b.py",
+      "kind": "import"
+    },
+    {
+      "source": "a.py",
+      "target": "c.py",
+      "kind": "import"
+    },
+    {
+      "source": "b.py",
+      "target": "d.py",
+      "kind": "import"
+    },
+    {
+      "source": "c.py",
+      "target": "d.py",
+      "kind": "import"
+    }
+  ],
+  "direct_dependencies": {
+    "a.py": [
+      "b.py",
+      "c.py"
+    ]
+  },
+  "transitive_dependencies": {
+    "a.py": [
+      "b.py",
+      "c.py",
+      "d.py"
+    ]
+  },
+  "distinct_paths_a_to_d": [
+    [
+      "a.py",
+      "b.py",
+      "d.py"
+    ],
+    [
+      "a.py",
+      "c.py",
+      "d.py"
+    ]
+  ],
+  "has_cycles": false
+}

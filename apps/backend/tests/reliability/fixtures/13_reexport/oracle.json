@@ -1,0 +1,11 @@
+{
+  "fixture_id": "13_reexport",
+  "description": "Package re-exporting symbols via __init__.py",
+  "nodes": [
+    "pkg/__init__.py",
+    "pkg/worker.py",
+    "consumer.py"
+  ],
+  "consumer_node": "consumer.py",
+  "reexport_source": "pkg/worker.py"
+}

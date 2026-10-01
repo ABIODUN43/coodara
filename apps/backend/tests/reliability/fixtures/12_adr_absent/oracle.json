@@ -1,0 +1,15 @@
+{
+  "fixture_id": "12_adr_absent",
+  "description": "Repository with no ADR directory or decision records",
+  "nodes": [
+    "apps/service.py"
+  ],
+  "has_authentic_adrs": false,
+  "adr_count": 0,
+  "expected_adrs": [],
+  "forbidden_synthetic_adrs": [
+    "ADR-INV-01",
+    "Domain Interface Isolation Contract"
+  ],
+  "adr_state": "UNKNOWN / NO_ADRS"
+}

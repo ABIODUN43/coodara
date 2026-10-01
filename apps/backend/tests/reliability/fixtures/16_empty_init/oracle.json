@@ -1,0 +1,11 @@
+{
+  "fixture_id": "16_empty_init",
+  "description": "Empty zero-byte __init__.py package marker",
+  "nodes": [
+    "lib/__init__.py",
+    "lib/core.py"
+  ],
+  "target_node": "lib/__init__.py",
+  "outbound_dependencies": [],
+  "inbound_callers": []
+}

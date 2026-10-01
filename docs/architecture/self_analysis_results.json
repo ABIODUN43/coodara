@@ -1,0 +1,62 @@
+[
+  {
+    "target": "data/repositories/11/tests/unit/directory_layout/__init__.py",
+    "direct_impact_count": 0,
+    "inbound_callers_count": 0,
+    "outbound_deps_count": 0,
+    "indirect_impact_count": 0,
+    "boundaries_crossed_count": 0,
+    "instability_before": 0.0,
+    "instability_after": 0.0,
+    "needs_intervention": false,
+    "confidence": "HIGH"
+  },
+  {
+    "target": "app/architecture/models.py",
+    "direct_impact_count": 12,
+    "inbound_callers_count": 9,
+    "outbound_deps_count": 3,
+    "indirect_impact_count": 428,
+    "boundaries_crossed_count": 5,
+    "instability_before": 0.25,
+    "instability_after": 0.25,
+    "needs_intervention": true,
+    "confidence": "HIGH"
+  },
+  {
+    "target": "app/api/v1/architecture.py",
+    "direct_impact_count": 25,
+    "inbound_callers_count": 1,
+    "outbound_deps_count": 24,
+    "indirect_impact_count": 420,
+    "boundaries_crossed_count": 5,
+    "instability_before": 0.96,
+    "instability_after": 0.96,
+    "needs_intervention": true,
+    "confidence": "HIGH"
+  },
+  {
+    "target": "app/architecture/simulation.py",
+    "direct_impact_count": 8,
+    "inbound_callers_count": 2,
+    "outbound_deps_count": 6,
+    "indirect_impact_count": 435,
+    "boundaries_crossed_count": 5,
+    "instability_before": 0.75,
+    "instability_after": 0.75,
+    "needs_intervention": true,
+    "confidence": "HIGH"
+  },
+  {
+    "target": "app/analyzers/dependency_analyzer.py",
+    "direct_impact_count": 11,
+    "inbound_callers_count": 1,
+    "outbound_deps_count": 10,
+    "indirect_impact_count": 434,
+    "boundaries_crossed_count": 5,
+    "instability_before": 0.91,
+    "instability_after": 0.91,
+    "needs_intervention": true,
+    "confidence": "HIGH"
+  }
+]

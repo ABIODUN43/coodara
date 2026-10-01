@@ -1,0 +1,8 @@
+{
+  "fixture_id": "adv_11_dead_unused_module",
+  "description": "Dead unused module with 0 inbound callers across repository",
+  "target_component": "legacy/dead_util.py",
+  "expected_direct_impact_count": 0,
+  "expected_indirect_impact_count": 0,
+  "expected_outcome": "NO_INTERVENTION_REQUIRED"
+}

@@ -1,0 +1,11 @@
+{
+  "fixture_id": "adv_07_cycle",
+  "description": "Circular dependency: a -> b -> c -> a",
+  "has_cycles": true,
+  "cycle_nodes": [
+    "cycle/a.py",
+    "cycle/b.py",
+    "cycle/c.py"
+  ],
+  "cycle_count": 1
+}

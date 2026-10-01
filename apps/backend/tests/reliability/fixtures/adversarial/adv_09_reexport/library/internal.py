@@ -1,0 +1,2 @@
+class CoreWidget:
+    pass

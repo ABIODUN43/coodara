@@ -1,0 +1,17 @@
+{
+  "fixture_id": "adv_06_multiple_paths",
+  "description": "Diamond dependency: a -> b -> d and a -> c -> d",
+  "target_component": "diamond/d.py",
+  "expected_direct_impacts": [
+    "diamond/b.py",
+    "diamond/c.py"
+  ],
+  "expected_indirect_impacts": [
+    "diamond/a.py"
+  ],
+  "expected_direct_impact_count": 2,
+  "expected_indirect_impact_count": 1,
+  "expected_total_affected_count": 3,
+  "no_double_counting_of_a": true,
+  "expected_paths_count": 2
+}

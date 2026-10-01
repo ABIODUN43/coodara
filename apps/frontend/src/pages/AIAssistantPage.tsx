@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   MessageSquare,
   Send,
@@ -58,6 +59,7 @@ const SUGGESTED_PROMPTS = [
 ];
 
 export function AIAssistantPage() {
+  const location = useLocation();
   const { activeProject, loading: orgsLoading } = useProject();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState<number | "all">("all");
@@ -68,6 +70,17 @@ export function AIAssistantPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync incoming prompt or repo selection from finding navigation
+  useEffect(() => {
+    const state = location.state as { prompt?: string; repoId?: number } | null;
+    if (state?.prompt) {
+      setInputValue(state.prompt);
+    }
+    if (state?.repoId) {
+      setSelectedRepoId(state.repoId);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     let cancelled = false;

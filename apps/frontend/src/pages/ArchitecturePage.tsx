@@ -22,7 +22,9 @@ export function ArchitecturePage() {
   const [issues, setIssues] = useState<ArchitectureIssue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
+    searchParams.get("component") || null
+  );
   const [activeTab, setActiveTab] = useState<"studio" | "map">(
     searchParams.get("tab") === "studio" ? "studio" : "map"
   );
@@ -34,6 +36,10 @@ export function ArchitecturePage() {
     const tab = searchParams.get("tab");
     if (tab === "studio" || tab === "map") {
       setActiveTab(tab);
+    }
+    const comp = searchParams.get("component");
+    if (comp) {
+      setSelectedNodeId(comp);
     }
   }, [searchParams]);
 

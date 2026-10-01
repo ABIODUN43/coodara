@@ -1,0 +1,7 @@
+{
+  "fixture_id": "adv_12_existing_interface",
+  "description": "Repository already uses Protocol / Dependency Inversion",
+  "target_component": "billing/gateway.py",
+  "already_has_interface": true,
+  "do_not_recommend_duplicate_interface": true
+}

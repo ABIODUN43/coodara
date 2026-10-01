@@ -1,0 +1,13 @@
+{
+  "fixture_id": "15_unused_module",
+  "description": "Module exists in repository but has 0 inbound callers",
+  "nodes": [
+    "main.py",
+    "worker.py",
+    "orphan_helper.py"
+  ],
+  "orphan_node": "orphan_helper.py",
+  "orphan_inbound_callers": [],
+  "orphan_outbound_dependencies": [],
+  "orphan_transitive_impact": []
+}

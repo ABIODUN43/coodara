@@ -1,0 +1,9 @@
+{
+  "fixture_id": "adv_08_empty_init",
+  "description": "Empty package __init__.py with 0 inbound and 0 outbound edges",
+  "target_component": "pkg/__init__.py",
+  "expected_direct_impact_count": 0,
+  "expected_indirect_impact_count": 0,
+  "expected_boundaries_crossed_count": 0,
+  "expected_outcome": "NO_INTERVENTION_REQUIRED"
+}

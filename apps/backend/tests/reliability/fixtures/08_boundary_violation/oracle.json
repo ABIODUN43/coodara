@@ -1,0 +1,13 @@
+{
+  "fixture_id": "08_boundary_violation",
+  "description": "Forbidden inversion violation: core domain imports outer infrastructure adapter",
+  "nodes": [
+    "apps/core/domain.py",
+    "apps/adapters/database.py"
+  ],
+  "forbidden_edge": {
+    "source": "apps/core/domain.py",
+    "target": "apps/adapters/database.py"
+  },
+  "is_architectural_violation": true
+}

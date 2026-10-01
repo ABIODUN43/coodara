@@ -1,0 +1,15 @@
+{
+  "fixture_id": "10_team_metadata_absent",
+  "description": "Repository with zero team ownership metadata",
+  "nodes": [
+    "apps/backend/server.py"
+  ],
+  "has_team_metadata": false,
+  "expected_team_status": "UNKNOWN",
+  "forbidden_fabricated_teams": [
+    "Root Team",
+    "Backend Team",
+    "@root-team-guild",
+    "@backend-team-guild"
+  ]
+}

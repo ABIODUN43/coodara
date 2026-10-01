@@ -1,0 +1,10 @@
+{
+  "fixture_id": "adv_09_reexport",
+  "description": "Re-export through package __init__.py: consumer imports CoreWidget from library",
+  "nodes": [
+    "library/internal.py",
+    "library/__init__.py",
+    "consumer.py"
+  ],
+  "expected_reexport_resolution": true
+}

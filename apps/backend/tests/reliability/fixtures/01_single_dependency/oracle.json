@@ -1,0 +1,35 @@
+{
+  "fixture_id": "01_single_dependency",
+  "description": "Direct single dependency: a imports b",
+  "nodes": [
+    "a.py",
+    "b.py"
+  ],
+  "edges": [
+    {
+      "source": "a.py",
+      "target": "b.py",
+      "kind": "import"
+    }
+  ],
+  "direct_dependencies": {
+    "a.py": [
+      "b.py"
+    ],
+    "b.py": []
+  },
+  "inbound_callers": {
+    "a.py": [],
+    "b.py": [
+      "a.py"
+    ]
+  },
+  "transitive_dependencies": {
+    "a.py": [
+      "b.py"
+    ],
+    "b.py": []
+  },
+  "has_cycles": false,
+  "isolated_nodes": []
+}

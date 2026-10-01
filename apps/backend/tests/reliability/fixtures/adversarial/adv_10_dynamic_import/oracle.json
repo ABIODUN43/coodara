@@ -1,0 +1,7 @@
+{
+  "fixture_id": "adv_10_dynamic_import",
+  "description": "Dynamic import via importlib.import_module",
+  "static_edge_exists": false,
+  "dynamic_uncertainty_preserved": true,
+  "cannot_assert_zero_certainty": true
+}

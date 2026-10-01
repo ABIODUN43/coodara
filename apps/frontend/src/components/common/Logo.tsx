@@ -1,17 +1,19 @@
 import logo from "@/assets/images/coodara-logo.jpeg";
 
-export function Logo() {
+export function Logo({ collapsed = false }: { collapsed?: boolean }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2.5">
       <img
         src={logo}
-        alt="Codara"
-        className="h-10 w-10"
+        alt="Coodara"
+        className="h-7 w-7 rounded-[6px] object-cover flex-shrink-0"
       />
 
-      <span className="text-2xl font-bold text-[var(--cd-ink)]">
-        Coodara
-      </span>
+      {!collapsed && (
+        <span className="text-[16px] font-semibold tracking-tight text-[var(--cd-ink)] font-heading select-none">
+          Coodara
+        </span>
+      )}
     </div>
   );
 }

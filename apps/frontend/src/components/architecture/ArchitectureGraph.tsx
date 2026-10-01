@@ -355,25 +355,63 @@ function aggregateToSubsystems(rawGraph: ArchitectureGraphData): ArchitectureGra
   };
 }
 
-interface ArchitectureGraphProps {
+export interface ArchitectureGraphProps {
   graph: ArchitectureGraphData;
   selectedNodeId: string | null;
   onSelectNode: (id: string | null) => void;
+  hideInternalToolbar?: boolean;
+  searchQuery?: string;
+  typeFilter?: string;
+  layoutMode?: "hierarchical" | "cose" | "concentric" | "grid";
+  viewLevel?: "subsystems" | "modules";
+  onViewLevelChange?: (level: "subsystems" | "modules") => void;
+  riskOverlay?: boolean;
+  focusMode?: boolean;
+  onHoverNode?: (
+    node: ArchitectureNode | null,
+    renderedPosition?: { x: number; y: number } | null
+  ) => void;
+  cyRefOut?: React.MutableRefObject<Core | null>;
+  onMatchCountChange?: (count: number) => void;
+  className?: string;
 }
 
 export function ArchitectureGraph({
   graph,
   selectedNodeId,
   onSelectNode,
+  hideInternalToolbar = false,
+  searchQuery: externalSearchQuery,
+  typeFilter: externalTypeFilter,
+  layoutMode: externalLayoutMode,
+  viewLevel: externalViewLevel,
+  onViewLevelChange,
+  riskOverlay = false,
+  focusMode = false,
+  onHoverNode,
+  cyRefOut,
+  onMatchCountChange,
+  className,
 }: ArchitectureGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
-  const [viewLevel, setViewLevel] = useState<"subsystems" | "modules">("subsystems");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [layoutMode, setLayoutMode] = useState<
+  const [internalViewLevel, setInternalViewLevel] = useState<"subsystems" | "modules">("subsystems");
+  const [internalTypeFilter, setInternalTypeFilter] = useState<string>("all");
+  const [internalSearchQuery, setInternalSearchQuery] = useState<string>("");
+  const [internalLayoutMode, setInternalLayoutMode] = useState<
     "hierarchical" | "cose" | "concentric" | "grid"
   >("hierarchical");
+
+  const viewLevel = externalViewLevel !== undefined ? externalViewLevel : internalViewLevel;
+  const typeFilter = externalTypeFilter !== undefined ? externalTypeFilter : internalTypeFilter;
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
+  const layoutMode = externalLayoutMode !== undefined ? externalLayoutMode : internalLayoutMode;
+
+  const handleViewLevelToggle = (next: "subsystems" | "modules") => {
+    setInternalViewLevel(next);
+    onViewLevelChange?.(next);
+  };
+
   const [selectedEdge, setSelectedEdge] = useState<{
     id: string;
     source: string;
@@ -677,7 +715,7 @@ export function ArchitectureGraph({
           {
             selector: ".faded",
             style: {
-              opacity: 0.18,
+              opacity: 0.28,
             },
           },
           {
@@ -691,8 +729,8 @@ export function ArchitectureGraph({
           {
             selector: ".dep-highlight",
             style: {
-              "line-color": "#2563EB",
-              "target-arrow-color": "#2563EB",
+              "line-color": "#4F46E5",
+              "target-arrow-color": "#4F46E5",
               width: 3.5,
               opacity: 1,
               "z-index": 90,
@@ -712,8 +750,38 @@ export function ArchitectureGraph({
             selector: ".search-highlight",
             style: {
               "border-width": 3.5,
-              "border-color": "#EAB308",
+              "border-color": "#D97706",
               "z-index": 95,
+            },
+          },
+          {
+            selector: ".search-dimmed",
+            style: {
+              opacity: 0.2,
+            },
+          },
+          {
+            selector: ".risk-node",
+            style: {
+              "border-width": 3.5,
+              "border-color": "#DC2626",
+              "z-index": 95,
+            },
+          },
+          {
+            selector: ".risk-edge",
+            style: {
+              "line-color": "#DC2626",
+              "target-arrow-color": "#DC2626",
+              width: 3.5,
+              opacity: 1,
+              "z-index": 90,
+            },
+          },
+          {
+            selector: ".focus-dimmed",
+            style: {
+              opacity: 0.08,
             },
           },
           {
@@ -753,7 +821,39 @@ export function ArchitectureGraph({
       }
     });
 
+    cy.on("mouseover", "node", (evt) => {
+      const node = evt.target;
+      const d = node.data();
+      const raw = effectiveGraph.nodes.find((n) => n.id === d.id);
+      const renderedPos = node.renderedPosition();
+      if (onHoverNode) {
+        onHoverNode(
+          raw || {
+            id: d.id,
+            name: d.label || d.id,
+            type: d.type,
+            dependency_count: node.outgoers("edge").length,
+            dependent_count: node.incomers("edge").length,
+            issue_count: 0,
+            health_score: null,
+          },
+          { x: renderedPos.x, y: renderedPos.y }
+        );
+      }
+    });
+
+    cy.on("mouseout", "node", () => {
+      if (onHoverNode) onHoverNode(null, null);
+    });
+
+    cy.on("pan zoom", () => {
+      if (onHoverNode) onHoverNode(null, null);
+    });
+
     cyRef.current = cy;
+    if (cyRefOut) {
+      cyRefOut.current = cy;
+    }
 
     // Run layout immediately
     runLayout(cy, layoutMode);
@@ -763,23 +863,33 @@ export function ArchitectureGraph({
         cy.destroy();
       } catch {}
       cyRef.current = null;
+      if (cyRefOut) {
+        cyRefOut.current = null;
+      }
     };
-  }, [elements, layoutMode, onSelectNode, runLayout]);
+  }, [elements, layoutMode, onSelectNode, runLayout, cyRefOut, onHoverNode, effectiveGraph]);
 
   // Handle Layout Mode switch without destroying instance
   const handleLayoutChange = (mode: "hierarchical" | "cose" | "concentric" | "grid") => {
-    setLayoutMode(mode);
+    setInternalLayoutMode(mode);
     if (cyRef.current) {
       runLayout(cyRef.current, mode);
     }
   };
 
-  // Selection highlighting
+  // Sync external layout mode changes
+  useEffect(() => {
+    if (externalLayoutMode && cyRef.current) {
+      runLayout(cyRef.current, externalLayoutMode);
+    }
+  }, [externalLayoutMode, runLayout]);
+
+  // Selection & Focus Mode highlighting
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
 
-    cy.elements().removeClass("faded selected dep-highlight dependent-highlight");
+    cy.elements().removeClass("faded selected dep-highlight dependent-highlight focus-dimmed");
     if (!selectedNodeId) return;
 
     // 1. Direct match in active Cytoscape graph
@@ -802,43 +912,92 @@ export function ArchitectureGraph({
       }
     }
 
-    // 4. If still no node matched, DO NOT fade the diagram! Keep all elements un-faded and fully clear.
+    // 4. If still no node matched, keep all elements un-faded
     if (node.length === 0) {
       return;
     }
 
-    // 5. Only apply .faded if a valid target node was actually found and selected
-    cy.elements().addClass("faded");
-    node.removeClass("faded").addClass("selected");
+    if (focusMode) {
+      // Focus mode: deep dimming for elements outside the 1st-degree neighborhood
+      cy.elements().addClass("focus-dimmed");
+      node.removeClass("focus-dimmed").addClass("selected");
 
-    node.outgoers("edge").forEach((edge) => {
-      edge.removeClass("faded").addClass("dep-highlight");
-      edge.target().removeClass("faded");
+      node.outgoers("edge").forEach((edge) => {
+        edge.removeClass("focus-dimmed").addClass("dep-highlight");
+        edge.target().removeClass("focus-dimmed");
+      });
+
+      node.incomers("edge").forEach((edge) => {
+        edge.removeClass("focus-dimmed").addClass("dependent-highlight");
+        edge.source().removeClass("focus-dimmed");
+      });
+    } else {
+      // Standard selection: restrained fading (opacity: 0.28)
+      cy.elements().addClass("faded");
+      node.removeClass("faded").addClass("selected");
+
+      node.outgoers("edge").forEach((edge) => {
+        edge.removeClass("faded").addClass("dep-highlight");
+        edge.target().removeClass("faded");
+      });
+
+      node.incomers("edge").forEach((edge) => {
+        edge.removeClass("faded").addClass("dependent-highlight");
+        edge.source().removeClass("faded");
+      });
+    }
+  }, [selectedNodeId, viewLevel, focusMode]);
+
+  // Risk Overlay effect (real data only)
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    cy.elements().removeClass("risk-node risk-edge");
+    if (!riskOverlay) return;
+
+    cy.nodes().forEach((n) => {
+      const id = n.data("id");
+      const raw = effectiveGraph.nodes.find((item) => item.id === id);
+      const hasIssues = (raw?.issue_count ?? 0) > 0;
+      const isLowHealth = raw?.health_score !== undefined && raw?.health_score !== null && raw.health_score < 70;
+      if (hasIssues || isLowHealth) {
+        n.addClass("risk-node");
+      }
     });
 
-    node.incomers("edge").forEach((edge) => {
-      edge.removeClass("faded").addClass("dependent-highlight");
-      edge.source().removeClass("faded");
+    cy.edges().forEach((e) => {
+      if (e.data("isViolating")) {
+        e.addClass("risk-edge");
+      }
     });
-  }, [selectedNodeId, viewLevel]);
+  }, [riskOverlay, effectiveGraph]);
 
   // Search filter
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
 
-    cy.nodes().removeClass("search-highlight");
-    if (!searchQuery.trim()) return;
+    cy.nodes().removeClass("search-highlight search-dimmed");
+    if (!searchQuery.trim()) {
+      onMatchCountChange?.(0);
+      return;
+    }
 
     const q = searchQuery.toLowerCase().trim();
+    let matchCount = 0;
     cy.nodes().forEach((n) => {
       const label = (n.data("label") || "").toLowerCase();
       const id = (n.data("id") || "").toLowerCase();
       if (label.includes(q) || id.includes(q)) {
         n.addClass("search-highlight");
+        matchCount++;
+      } else {
+        n.addClass("search-dimmed");
       }
     });
-  }, [searchQuery]);
+    onMatchCountChange?.(matchCount);
+  }, [searchQuery, onMatchCountChange]);
 
   // Type filter
   useEffect(() => {
@@ -890,8 +1049,8 @@ export function ArchitectureGraph({
   };
   const reset = () => {
     onSelectNode(null);
-    setTypeFilter("all");
-    setSearchQuery("");
+    setInternalTypeFilter("all");
+    setInternalSearchQuery("");
     if (cyRef.current) {
       runLayout(cyRef.current, layoutMode);
     }
@@ -906,127 +1065,129 @@ export function ArchitectureGraph({
   }
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] shadow-sm">
-      {/* Graph Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--cd-border-soft)] px-4 py-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-[14px] font-bold text-[var(--cd-ink)]">System Architecture</h3>
-            <div className="inline-flex rounded-lg border border-[var(--cd-border)] bg-[var(--cd-sunken)] p-0.5 text-[11px] font-semibold">
-              <button
-                onClick={() => setViewLevel("subsystems")}
-                className={`cursor-pointer rounded-md px-2.5 py-0.5 transition-colors ${
-                  viewLevel === "subsystems"
-                    ? "bg-[var(--cd-surface)] text-[var(--cd-accent)] shadow-xs"
-                    : "text-[var(--cd-ink-soft)] hover:text-[var(--cd-ink)]"
-                }`}
+    <div className={className ?? "flex flex-col overflow-hidden rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] shadow-sm"}>
+      {/* Graph Toolbar - only rendered if internal toolbar is enabled */}
+      {!hideInternalToolbar && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--cd-border-soft)] px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-[14px] font-bold text-[var(--cd-ink)]">System Architecture</h3>
+              <div className="inline-flex rounded-lg border border-[var(--cd-border)] bg-[var(--cd-sunken)] p-0.5 text-[11px] font-semibold">
+                <button
+                  onClick={() => handleViewLevelToggle("subsystems")}
+                  className={`cursor-pointer rounded-md px-2.5 py-0.5 transition-colors ${
+                    viewLevel === "subsystems"
+                      ? "bg-[var(--cd-surface)] text-[var(--cd-accent)] shadow-xs"
+                      : "text-[var(--cd-ink-soft)] hover:text-[var(--cd-ink)]"
+                  }`}
+                >
+                  🏛️ Architecture Overview
+                </button>
+                <button
+                  onClick={() => handleViewLevelToggle("modules")}
+                  className={`cursor-pointer rounded-md px-2.5 py-0.5 transition-colors ${
+                    viewLevel === "modules"
+                      ? "bg-[var(--cd-surface)] text-[var(--cd-accent)] shadow-xs"
+                      : "text-[var(--cd-ink-soft)] hover:text-[var(--cd-ink)]"
+                  }`}
+                >
+                  🔍 Detailed Modules ({graph.nodes.length})
+                </button>
+              </div>
+            </div>
+            <p className="mt-0.5 text-[12px] text-[var(--cd-ink-soft)]">
+              {viewLevel === "subsystems"
+                ? "High-level domain subsystems and cross-tier dependency contracts."
+                : "Granular module imports and direct code dependencies."}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Search Box */}
+            <div className="relative flex items-center">
+              <Search className="absolute left-2.5 h-3.5 w-3.5 text-[var(--cd-ink-faint)]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setInternalSearchQuery(e.target.value)}
+                placeholder="Search component..."
+                className="h-8 w-36 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] pl-8 pr-2 text-[11.5px] text-[var(--cd-ink)] placeholder-[var(--cd-ink-faint)] focus:w-48 focus:border-[var(--cd-accent)] focus:outline-none transition-all sm:w-44"
+              />
+            </div>
+
+            {/* Type Filter */}
+            <div className="flex items-center rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2">
+              <Filter className="h-3.5 w-3.5 text-[var(--cd-ink-faint)] mr-1" />
+              <select
+                value={typeFilter}
+                onChange={(e) => setInternalTypeFilter(e.target.value)}
+                className="h-8 border-none bg-transparent pr-2 text-[12px] font-medium text-[var(--cd-ink)] focus:outline-none"
               >
-                🏛️ Architecture Overview
+                <option value="all">Filter: All</option>
+                <option value="frontend">Frontend / Ingress</option>
+                <option value="storage">Cache / Storage</option>
+                <option value="service">Core Services</option>
+                <option value="external">External Services</option>
+                <option value="ui">UI / Shared</option>
+                <option value="queue">Background / Queue</option>
+              </select>
+            </div>
+
+            {/* Layout Mode */}
+            <div className="flex items-center rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2">
+              <Layers className="h-3.5 w-3.5 text-[var(--cd-ink-faint)] mr-1" />
+              <select
+                value={layoutMode}
+                onChange={(e) => handleLayoutChange(e.target.value as any)}
+                className="h-8 border-none bg-transparent pr-2 text-[12px] font-medium text-[var(--cd-ink)] focus:outline-none"
+              >
+                <option value="hierarchical">Layout: Hierarchical (Tiered)</option>
+                <option value="cose">Layout: Clustered (Organic)</option>
+                <option value="concentric">Layout: Concentric</option>
+                <option value="grid">Layout: Structured Grid</option>
+              </select>
+            </div>
+
+            {/* Controls: Zoom In, Zoom Out, Fit, Reset */}
+            <div className="flex items-center overflow-hidden rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)]">
+              <button
+                onClick={zoomIn}
+                title="Zoom in"
+                className="flex h-8 items-center gap-1 px-2.5 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Zoom In</span>
               </button>
               <button
-                onClick={() => setViewLevel("modules")}
-                className={`cursor-pointer rounded-md px-2.5 py-0.5 transition-colors ${
-                  viewLevel === "modules"
-                    ? "bg-[var(--cd-surface)] text-[var(--cd-accent)] shadow-xs"
-                    : "text-[var(--cd-ink-soft)] hover:text-[var(--cd-ink)]"
-                }`}
+                onClick={zoomOut}
+                title="Zoom out"
+                className="flex h-8 items-center gap-1 border-l border-[var(--cd-border)] px-2.5 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
               >
-                🔍 Detailed Modules ({graph.nodes.length})
+                <ZoomOut className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Zoom Out</span>
+              </button>
+              <button
+                onClick={fit}
+                title="Fit to view"
+                className="flex h-8 items-center gap-1 border-l border-[var(--cd-border)] px-2.5 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Fit View</span>
+              </button>
+              <button
+                onClick={reset}
+                title="Reset view"
+                className="flex h-8 items-center px-2.5 border-l border-[var(--cd-border)] text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
-          <p className="mt-0.5 text-[12px] text-[var(--cd-ink-soft)]">
-            {viewLevel === "subsystems"
-              ? "High-level domain subsystems and cross-tier dependency contracts."
-              : "Granular module imports and direct code dependencies."}
-          </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Search Box */}
-          <div className="relative flex items-center">
-            <Search className="absolute left-2.5 h-3.5 w-3.5 text-[var(--cd-ink-faint)]" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search component..."
-              className="h-8 w-36 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] pl-8 pr-2 text-[11.5px] text-[var(--cd-ink)] placeholder-[var(--cd-ink-faint)] focus:w-48 focus:border-[var(--cd-accent)] focus:outline-none transition-all sm:w-44"
-            />
-          </div>
-
-          {/* Type Filter */}
-          <div className="flex items-center rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2">
-            <Filter className="h-3.5 w-3.5 text-[var(--cd-ink-faint)] mr-1" />
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="h-8 border-none bg-transparent pr-2 text-[12px] font-medium text-[var(--cd-ink)] focus:outline-none"
-            >
-              <option value="all">Filter: All</option>
-              <option value="frontend">Frontend / Ingress</option>
-              <option value="storage">Cache / Storage</option>
-              <option value="service">Core Services</option>
-              <option value="external">External Services</option>
-              <option value="ui">UI / Shared</option>
-              <option value="queue">Background / Queue</option>
-            </select>
-          </div>
-
-          {/* Layout Mode */}
-          <div className="flex items-center rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2">
-            <Layers className="h-3.5 w-3.5 text-[var(--cd-ink-faint)] mr-1" />
-            <select
-              value={layoutMode}
-              onChange={(e) => handleLayoutChange(e.target.value as any)}
-              className="h-8 border-none bg-transparent pr-2 text-[12px] font-medium text-[var(--cd-ink)] focus:outline-none"
-            >
-              <option value="hierarchical">Layout: Hierarchical (Tiered)</option>
-              <option value="cose">Layout: Clustered (Organic)</option>
-              <option value="concentric">Layout: Concentric</option>
-              <option value="grid">Layout: Structured Grid</option>
-            </select>
-          </div>
-
-          {/* Controls: Zoom In, Zoom Out, Fit, Reset */}
-          <div className="flex items-center overflow-hidden rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)]">
-            <button
-              onClick={zoomIn}
-              title="Zoom in"
-              className="flex h-8 items-center gap-1 px-2.5 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
-            >
-              <ZoomIn className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Zoom In</span>
-            </button>
-            <button
-              onClick={zoomOut}
-              title="Zoom out"
-              className="flex h-8 items-center gap-1 border-l border-[var(--cd-border)] px-2.5 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
-            >
-              <ZoomOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Zoom Out</span>
-            </button>
-            <button
-              onClick={fit}
-              title="Fit to view"
-              className="flex h-8 items-center gap-1 border-l border-[var(--cd-border)] px-2.5 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Fit View</span>
-            </button>
-            <button
-              onClick={reset}
-              title="Reset view"
-              className="flex h-8 items-center px-2.5 border-l border-[var(--cd-border)] text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)] cursor-pointer"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Canvas Container */}
-      <div className="relative h-[560px] w-full">
+      <div className="relative h-full min-h-[560px] w-full flex-1">
         <div
           ref={containerRef}
           className="h-full w-full"
@@ -1120,15 +1281,19 @@ export function ArchitectureGraph({
 
         <div className="flex flex-wrap items-center gap-4 text-[var(--cd-ink-soft)]">
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-6 border-b-2 border-blue-600" />
-            <span className="font-medium text-blue-700 dark:text-blue-400 font-semibold">Intentional Contract</span>
+            <span className="inline-block w-5 h-0.5 bg-[#4F46E5]" />
+            <span className="font-semibold text-indigo-700 dark:text-indigo-400">Depends On (Out)</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-6 border-b-2 border-dashed border-rose-500" />
+            <span className="inline-block w-5 h-0.5 bg-[#059669]" />
+            <span className="font-semibold text-emerald-700 dark:text-emerald-400">Depended On By (In)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-5 border-b-2 border-dashed border-rose-500" />
             <span className="font-medium text-rose-600 dark:text-rose-400 font-bold">Boundary Violation</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-6 border-b-2 border-dashed border-slate-400" />
+            <span className="inline-block w-5 border-b-2 border-dashed border-slate-400" />
             <span className="font-medium">Indirect</span>
           </div>
         </div>

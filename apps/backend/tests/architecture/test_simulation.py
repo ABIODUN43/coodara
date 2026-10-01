@@ -63,14 +63,17 @@ def test_deterministic_simulation_direct_and_indirect_impact(sample_graph):
     assert res.target_component_id == "apps/core/services"
     assert res.intervention_type == InterventionType.REFACTOR
 
-    # Direct impacts: target itself + 2 callers (api/routes, web/views) + 2 dependencies (db/models, payments/client)
+    # Downstream impacts strictly excluding target entity:
+    # 2 callers (api/routes, web/views) + 2 dependencies (db/models, payments/client)
+    assert res.target_entity is not None
+    assert res.target_entity.entity_id == "apps/core/services"
     direct_ids = {item.entity_id for item in res.direct_impacts}
-    assert "apps/core/services" in direct_ids
+    assert "apps/core/services" not in direct_ids
     assert "apps/api/routes" in direct_ids
     assert "apps/web/views" in direct_ids
     assert "apps/db/models" in direct_ids
     assert "apps/payments/client" in direct_ids
-    assert res.direct_impact_count == 5
+    assert res.direct_impact_count == 4
 
 
 def test_deterministic_simulation_remove_intervention(sample_graph):

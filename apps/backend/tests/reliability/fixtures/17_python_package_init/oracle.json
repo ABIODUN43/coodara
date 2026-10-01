@@ -1,0 +1,13 @@
+{
+  "fixture_id": "17_python_package_init",
+  "description": "__init__.py with substantive package initialization and intra-package import",
+  "nodes": [
+    "engine/__init__.py",
+    "engine/driver.py"
+  ],
+  "outbound_dependencies": {
+    "engine/__init__.py": [
+      "engine/driver.py"
+    ]
+  }
+}

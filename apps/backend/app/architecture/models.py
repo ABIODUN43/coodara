@@ -28,6 +28,66 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 
+class TruthStatus(StrEnum):
+    """
+    Epistemic truth classification for architectural claims, metrics, and symbols.
+
+    Invariants:
+    1. OBSERVED: Directly established from repository files, AST, or commits.
+    2. DERIVED: Deterministically calculated from observed evidence (e.g., BFS paths,
+       transitive reachability, efferent coupling, Robert Martin instability).
+    3. INFERRED: Reasoned architectural interpretation not directly observed (e.g.,
+       architectural pattern applicability, likely coupling bottlenecks).
+    4. UNKNOWN: Cannot be established from available static evidence (e.g., runtime
+       traffic, execution frequency, team ownership without explicit CODEOWNERS/metadata).
+    5. PROPOSED: Remediation or design entity recommended for creation/modification
+       (e.g., proposed interface, adapter, protocol, refactor signature).
+
+    CRITICAL RULES:
+    - PROPOSED entities must NEVER be classified as OBSERVED.
+    - Absence of evidence (e.g., missing ADRs) must NEVER be conflated with verified zero.
+    - Absence of metadata (e.g., unassigned team) must be UNKNOWN, NEVER fabricated.
+    """
+
+    OBSERVED = "OBSERVED"
+    DERIVED = "DERIVED"
+    INFERRED = "INFERRED"
+    UNKNOWN = "UNKNOWN"
+    PROPOSED = "PROPOSED"
+
+
+@dataclass(frozen=True, slots=True)
+class TruthClaim:
+    """
+    An architectural claim bound to an explicit TruthStatus and evidence citation.
+    """
+
+    claim: str
+    status: TruthStatus
+    evidence_citation: str = ""
+    rationale: str = ""
+
+    @property
+    def is_fact(self) -> bool:
+        """Return True if the claim is directly observed from repository evidence."""
+        return self.status == TruthStatus.OBSERVED
+
+    @property
+    def is_derived(self) -> bool:
+        """Return True if the claim is mathematically derived from observed evidence."""
+        return self.status == TruthStatus.DERIVED
+
+    @property
+    def is_proposed(self) -> bool:
+        """Return True if the entity is a recommendation rather than existing code."""
+        return self.status == TruthStatus.PROPOSED
+
+    @property
+    def is_unknown(self) -> bool:
+        """Return True if the claim cannot be established from repository evidence."""
+        return self.status == TruthStatus.UNKNOWN
+
+
 class ArchitectureIssueSeverity(StrEnum):
     """
     Severity assigned to an architectural issue.

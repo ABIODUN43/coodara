@@ -1,0 +1,10 @@
+{
+  "fixture_id": "adv_14_actual_violation",
+  "description": "Genuine architectural violation: domain entity directly couples to database layer with 2 downstream consumers",
+  "target_component": "domain/order_entity.py",
+  "has_actual_problem": true,
+  "expected_direct_impact_count": 2,
+  "expected_boundaries_crossed_count": 1,
+  "expected_intervention_required": true,
+  "expected_pattern": "Port / Adapter & Dependency Inversion Pattern"
+}

@@ -153,6 +153,7 @@ from fastapi import (
     HTTPException,
     Path,
     Query,
+    Response,
     status,
 )
 from sqlalchemy import delete, func, select
@@ -2502,6 +2503,8 @@ async def create_architecture_rule(
 @router.delete(
     "/rules/{rule_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    response_model=None,
     summary="Delete a custom architectural boundary policy rule",
     tags=["Architecture"],
 )
@@ -2878,11 +2881,11 @@ async def analyze_architectural_impact(
             constraints_affected=[],
             evidence=[],
             recommended_design=RecommendedDesign(
-                pattern_name="Direct Modular Boundary",
-                pattern_category="Boundary Protection",
-                summary=f"Ensure {comp_id} encapsulates internal logic without leaking database models.",
-                why_this_resolves_all_issues=["Preserves component autonomy."],
-                architectural_blueprint=f"[{comp_id}] -> [Interface Contract]",
+                pattern_name="NO_INTERVENTION_REQUIRED",
+                pattern_category="No Action Needed",
+                summary=f"No dependency edges found for {comp_id}.",
+                why_this_resolves_all_issues=["Component has no known callers or dependencies."],
+                architectural_blueprint=f"[{comp_id}]",
                 before_code=None,
                 after_code=None,
                 code_example=None,
@@ -2940,6 +2943,7 @@ async def analyze_architectural_impact(
     subsystem = sim_res.subsystem
 
     # Map direct and indirect impacts to AffectedComponentImpact
+    # Ground team ownership strictly in repository facts (UNKNOWN if not verified)
     affected_components: list[AffectedComponentImpact] = []
     for d in sim_res.direct_impacts:
         affected_components.append(
@@ -2948,7 +2952,7 @@ async def analyze_architectural_impact(
                 name=d.name,
                 type=d.component_type,
                 subsystem=d.subsystem,
-                team=f"{d.subsystem.replace('_', ' ').replace('-', ' ').title()} Team",
+                team="UNKNOWN",
                 impact_level="high",
                 impact_depth=1,
                 reason=d.reason,
@@ -2963,7 +2967,7 @@ async def analyze_architectural_impact(
                 name=ind.name,
                 type=ind.component_type,
                 subsystem=ind.subsystem,
-                team=f"{ind.subsystem.replace('_', ' ').replace('-', ' ').title()} Team",
+                team="UNKNOWN",
                 impact_level="medium" if ind.hops <= 2 else "low",
                 impact_depth=ind.hops,
                 reason=ind.reason,
@@ -2971,17 +2975,18 @@ async def analyze_architectural_impact(
             )
         )
 
-    # Teams impacted
+    # Teams impacted: only populated when authentic verified team ownership exists
     team_map: dict[str, list[str]] = {}
     for aff in affected_components:
-        team_map.setdefault(aff.team, []).append(aff.subsystem)
+        if aff.team and aff.team not in ("UNKNOWN", "Unassigned", "Platform Team"):
+            team_map.setdefault(aff.team, []).append(aff.subsystem)
 
     teams_impacted = [
         TeamImpactItem(
             team_name=t_name,
             subsystems_owned=list(set(subs)),
             components_affected_count=sum(1 for a in affected_components if a.team == t_name),
-            lead_contact=f"@{t_name.lower().replace(' ', '-')}-guild",
+            lead_contact="Unassigned",
             review_required=True,
             impact_summary=f"Shared interface contracts affected by {sim_res.intervention_type.value} on {comp_name}. PR review recommended.",
         )
@@ -3016,7 +3021,7 @@ async def analyze_architectural_impact(
         explanation=f"Intervention shifts efferent fan-out from {sim_res.efferent_before} to {sim_res.efferent_after} (Instability I: {sim_res.instability_before} -> {sim_res.instability_after}).",
     )
 
-    # ADR violations from real repository ADRs if present
+    # ADR violations: strictly ground in real repository ADR records
     adr_violations: list[ADRViolationDetail] = []
     if repo_adrs:
         for adr in repo_adrs[:2]:
@@ -3029,100 +3034,136 @@ async def analyze_architectural_impact(
                     prescribed_pattern="Interface Segregation & Adapter Isolation",
                 )
             )
+
+    # Architectural Intervention Assessment: Establish if a problem actually exists
+    needs_intervention = (
+        len(affected_components) > 0
+        or len(boundaries_crossed) > 0
+        or len(adr_violations) > 0
+        or coupling_shift.is_increasing_coupling
+    )
+
+    alternative_options: list[RecommendedAlternativeOption] = []
+
+    if not needs_intervention:
+        recommended_design = RecommendedDesign(
+            pattern_name="NO_INTERVENTION_REQUIRED",
+            pattern_category="Stable / Isolated Component",
+            summary=f"Component '{comp_name}' is structurally isolated with 0 downstream consumers and 0 boundary violations. No refactoring or decoupling intervention required.",
+            why_this_resolves_all_issues=[
+                "Component has zero incoming callers; no interface bulkhead or port abstraction is required.",
+                "Zero subsystem boundary crossings detected.",
+                "Zero architecture decision record (ADR) violations detected.",
+            ],
+            architectural_blueprint=f"[ {comp_name} (Self-Contained / Leaf Component) ]",
+            before_code=f"# {comp_name} has no downstream callers or cross-boundary dependencies.",
+            after_code=f"# No refactoring required for {comp_name}.",
+            code_example=f"# Component is self-contained. Retain current implementation.",
+            step_by_step_guidance=[
+                "1. Retain current component encapsulation.",
+                "2. No architectural decoupling action required.",
+            ],
+            tradeoffs=[
+                "No architectural overhead or unnecessary abstraction layers introduced.",
+            ],
+            alternative_patterns=[],
+            agent_spec_prompt=f"No architectural intervention required for {comp_name}.",
+        )
     else:
-        adr_violations.append(
-            ADRViolationDetail(
-                adr_id="ADR-INV-01",
-                adr_title="Domain Interface Isolation Contract",
-                violation_reason=f"Modifying {comp_name} directly without interface extraction violates boundary isolation.",
-                severity="warning",
-                prescribed_pattern="Dependency Inversion via Abstract Domain Port",
-            )
+        # Dynamically compute fit scores grounded in boundary resolution and coupling shifts
+        base_dip_fit = 60 + min(30, len(boundaries_crossed) * 10) + (10 if coupling_shift.is_increasing_coupling else 0)
+        dip_fit_score = min(98, max(50, base_dip_fit))
+
+        base_event_fit = 50 + min(25, len(boundaries_crossed) * 8) + (15 if coupling_shift.delta_efferent > 1 else 0)
+        event_fit_score = min(90, max(40, base_event_fit))
+
+        safe_name = comp_name.replace(".", "").replace("_", "").replace("-", "")
+        after_code = (
+            f"# [PROPOSED DESIGN - NOT AN EXISTING REPOSITORY SYMBOL]\n"
+            f"# Decoupled interface contract proposed for {comp_name}\n"
+            "from typing import Protocol\n\n"
+            f"class I{safe_name}Port(Protocol):\n"
+            "    # Define domain-specific methods based on caller requirements\n"
+            "    ...\n\n"
+            f"class Decoupled{safe_name}Coordinator:\n"
+            f"    def __init__(self, port: I{safe_name}Port):\n"
+            "        self.port = port\n"
         )
 
-    # Recommended design
-    safe_name = comp_name.replace(".", "").replace("_", "").replace("-", "")
-    after_code = (
-        f"# RECOMMENDED DESIGN: Port-Adapter Interface for {comp_name}\n"
-        "from typing import Protocol\n\n"
-        f"class I{safe_name}Port(Protocol):\n"
-        f"    async def execute_operation(self, payload: dict) -> dict:\n"
-        "        # Decoupled domain contract\n"
-        "        ...\n\n"
-        f"class Decoupled{safe_name}Coordinator:\n"
-        f"    def __init__(self, port: I{safe_name}Port):\n"
-        "        self.port = port\n"
-    )
-
-    alternative_options = [
-        RecommendedAlternativeOption(
-            id="opt-dip",
-            name="Dependency Inversion via Domain Port",
-            tag="Recommended (Best Decoupling)",
-            summary=f"Extract an abstract domain interface for {comp_name} injected via constructor.",
-            fit_score=95,
-            complexity="Low",
-            boundary_violations_resolved=len(boundaries_crossed),
-            coupling_impact=f"Instability I = {sim_res.instability_before} (Stable)",
-            code_snippet=after_code,
-        ),
-        RecommendedAlternativeOption(
-            id="opt-events",
-            name="Asynchronous Domain Events",
-            tag="High-Throughput Decoupling",
-            summary=f"Publish domain events when {comp_name} state changes rather than calling consumers synchronously.",
-            fit_score=88,
-            complexity="Medium",
-            boundary_violations_resolved=len(boundaries_crossed),
-            coupling_impact="Eliminates synchronous caller locks",
-            code_snippet=(
-                f"# Event publishing pattern for {comp_name}\n"
-                "async def publish_event(event_bus, event):\n"
-                "    await event_bus.publish(event)\n"
+        alternative_options = [
+            RecommendedAlternativeOption(
+                id="opt-dip",
+                name="Dependency Inversion via Domain Port",
+                tag="Recommended (Best Decoupling)",
+                summary=f"Extract an abstract domain interface for {comp_name} injected via constructor.",
+                fit_score=dip_fit_score,
+                complexity="Low",
+                boundary_violations_resolved=len(boundaries_crossed),
+                coupling_impact=f"Instability I = {sim_res.instability_before} (Stable)",
+                code_snippet=after_code,
             ),
-        ),
-    ]
+            RecommendedAlternativeOption(
+                id="opt-events",
+                name="Asynchronous Domain Events",
+                tag="High-Throughput Decoupling",
+                summary=f"Publish domain events when {comp_name} state changes rather than calling consumers synchronously.",
+                fit_score=event_fit_score,
+                complexity="Medium",
+                boundary_violations_resolved=len(boundaries_crossed),
+                coupling_impact="Eliminates synchronous caller locks",
+                code_snippet=(
+                    f"# [PROPOSED DESIGN - NOT AN EXISTING REPOSITORY SYMBOL]\n"
+                    f"# Event publishing pattern for {comp_name}\n"
+                    "async def publish_event(event_bus, event):\n"
+                    "    await event_bus.publish(event)\n"
+                ),
+            ),
+        ]
 
-    why_resolves = [
-        f"Shields {len(affected_components)} Downstream Components: Abstract interface acts as a bulkhead protecting callers.",
-        f"Restores {len(boundaries_crossed)} Subsystem Boundaries: Isolates cross-subsystem dependencies behind clean contracts.",
-        f"Unblocks {len(teams_impacted)} Engineering Teams: Enables autonomous feature evolution without lockstep PR dependencies.",
-        f"Controls Instability Index: Contains instability index I <= {sim_res.instability_before}, avoiding runaway coupling velocity.",
-    ]
+        why_resolves = [
+            f"Shields {len(affected_components)} Downstream Components: Abstract interface acts as a bulkhead protecting callers.",
+            f"Restores {len(boundaries_crossed)} Subsystem Boundaries: Isolates cross-subsystem dependencies behind clean contracts.",
+            f"Controls Instability Index: Contains instability index I <= {sim_res.instability_before}, avoiding runaway coupling velocity.",
+        ]
+        if teams_impacted:
+            why_resolves.append(
+                f"Unblocks {len(teams_impacted)} Engineering Teams: Enables autonomous feature evolution without lockstep PR dependencies."
+            )
 
-    recommended_design = RecommendedDesign(
-        pattern_name="Port / Adapter & Dependency Inversion Pattern",
-        pattern_category="Decoupling & Boundary Protection",
-        summary=f"Introduce an abstract Port interface for {comp_name} to isolate caller contracts and prevent ripple cascades across {len(affected_components)} affected components.",
-        why_this_resolves_all_issues=why_resolves,
-        architectural_blueprint=(
-            f"[ Ingress Callers ]\n"
-            f"       |\n"
-            f"       v (Intentional Contract)\n"
-            f"[ I{safe_name}Port Interface ] <-- (Inverts Dependency)\n"
-            f"       |\n"
-            f"       v\n"
-            f"[ {comp_name} Implementation ]"
-        ),
-        before_code=f"# Direct coupling to {comp_name} creates {len(affected_components)} downstream dependencies.",
-        after_code=after_code,
-        code_example=after_code,
-        step_by_step_guidance=[
-            f"1. Extract an abstract interface contract for {comp_name}.",
-            "2. Inject the interface into upstream callers using Dependency Inversion.",
-            "3. Run automated tests to verify zero regression across callers.",
-        ],
-        tradeoffs=[
-            "Requires one extra interface abstraction layer.",
-            "Increases initial refactoring setup time by ~1 hour.",
-        ],
-        alternative_patterns=alternative_options,
-        agent_spec_prompt=f"Implement {sim_res.intervention_type.value} for {comp_name} adhering to Port/Adapter architecture to isolate boundaries.",
-    )
+        recommended_design = RecommendedDesign(
+            pattern_name="Port / Adapter & Dependency Inversion Pattern",
+            pattern_category="Decoupling & Boundary Protection",
+            summary=f"Introduce an abstract Port interface for {comp_name} to isolate caller contracts and prevent ripple cascades across {len(affected_components)} affected components.",
+            why_this_resolves_all_issues=why_resolves,
+            architectural_blueprint=(
+                f"[ Ingress Callers ]\n"
+                f"       |\n"
+                f"       v (Intentional Contract)\n"
+                f"[ I{safe_name}Port Interface ] <-- (Inverts Dependency)\n"
+                f"       |\n"
+                f"       v\n"
+                f"[ {comp_name} Implementation ]"
+            ),
+            before_code=f"# Direct coupling to {comp_name} creates {len(affected_components)} downstream dependencies.",
+            after_code=after_code,
+            code_example=after_code,
+            step_by_step_guidance=[
+                f"1. Extract an abstract interface contract for {comp_name}.",
+                "2. Inject the interface into upstream callers using Dependency Inversion.",
+                "3. Run automated tests to verify zero regression across callers.",
+            ],
+            tradeoffs=[
+                "Requires one extra interface abstraction layer.",
+                "Introduces additional interface maintenance overhead in callers.",
+            ],
+            alternative_patterns=alternative_options,
+            agent_spec_prompt=f"Implement {sim_res.intervention_type.value} for {comp_name} adhering to Port/Adapter architecture to isolate boundaries.",
+        )
 
-    # Bullet points: concrete structural facts WITHOUT arbitrary percentage
+    # Bullet points: concrete structural facts WITHOUT arbitrary percentage or fabricated team counts
+    teams_str = f" across {len(teams_impacted)} engineering teams" if teams_impacted else ""
     consequence_bullets = [
-        f"{sim_res.direct_impact_count} directly impacted and {sim_res.indirect_impact_count} transitively reachable components across {len(teams_impacted)} engineering teams.",
+        f"{sim_res.direct_impact_count} directly impacted and {sim_res.indirect_impact_count} transitively reachable components{teams_str}.",
         f"Crosses {sim_res.boundaries_crossed_count} architectural subsystem boundaries.",
         f"Shifts efferent coupling fan-out from {sim_res.efferent_before} to {sim_res.efferent_after} (Instability I: {sim_res.instability_before} -> {sim_res.instability_after}).",
     ]

@@ -1,0 +1,10 @@
+{
+  "fixture_id": "14_dynamic_import",
+  "description": "Dynamic import via importlib.import_module",
+  "nodes": [
+    "loader.py",
+    "plugins/active.py"
+  ],
+  "static_ast_explicit_import_found": false,
+  "dynamic_edge_status": "UNKNOWN"
+}

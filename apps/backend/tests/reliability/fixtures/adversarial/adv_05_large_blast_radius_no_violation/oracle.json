@@ -1,0 +1,8 @@
+{
+  "fixture_id": "adv_05_large_blast_radius_no_violation",
+  "description": "Large blast radius (15 callers) with 0 boundary crossings",
+  "target_component": "analytics/metric_hub.py",
+  "expected_direct_impact_count": 15,
+  "expected_boundaries_crossed_count": 0,
+  "large_consequence": true
+}

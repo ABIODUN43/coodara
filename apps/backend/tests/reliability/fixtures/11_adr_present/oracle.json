@@ -1,0 +1,16 @@
+{
+  "fixture_id": "11_adr_present",
+  "description": "Repository with authentic Markdown Architectural Decision Record",
+  "nodes": [
+    "apps/service.py"
+  ],
+  "has_authentic_adrs": true,
+  "adr_count": 1,
+  "expected_adrs": [
+    {
+      "number": "0001",
+      "title": "Use Ports and Adapters"
+    }
+  ],
+  "truth_status": "OBSERVED"
+}

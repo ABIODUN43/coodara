@@ -1,0 +1,26 @@
+{
+  "fixture_id": "02_zero_dependency",
+  "description": "Two completely disconnected modules",
+  "nodes": [
+    "a.py",
+    "b.py"
+  ],
+  "edges": [],
+  "direct_dependencies": {
+    "a.py": [],
+    "b.py": []
+  },
+  "inbound_callers": {
+    "a.py": [],
+    "b.py": []
+  },
+  "transitive_dependencies": {
+    "a.py": [],
+    "b.py": []
+  },
+  "has_cycles": false,
+  "isolated_nodes": [
+    "a.py",
+    "b.py"
+  ]
+}
