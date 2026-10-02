@@ -28,6 +28,7 @@ import type {
   ArchitectureRuleResponse,
   ArchitectureRuleListResponse,
   ArchitectureQualityGateResponse,
+  ArchitectureReportResponse,
 } from "@/types/architecture";
 
 // All architecture API requests live here (contract §2) — no direct API
@@ -556,3 +557,35 @@ export async function updateRecommendationStatus(
   );
   return res.data;
 }
+
+export async function fetchArchitectureReport(
+  orgId: string | number,
+  repoId: string | number
+): Promise<ArchitectureReportResponse> {
+  const res = await api.get<ArchitectureReportResponse>(
+    `/organizations/${orgId}/repositories/${repoId}/architecture/report`
+  );
+  return res.data;
+}
+
+export async function downloadArchitectureReportMarkdown(
+  orgId: string | number,
+  repoId: string | number,
+  repoName: string
+): Promise<void> {
+  const res = await api.get<string>(
+    `/organizations/${orgId}/repositories/${repoId}/architecture/report/markdown`,
+    {
+      responseType: "text",
+    }
+  );
+  const blob = new Blob([res.data], { type: "text/markdown;charset=utf-8" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `coodara-architecture-report-${repoName}.md`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}

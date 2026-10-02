@@ -115,6 +115,11 @@ from app.architecture.classifier import ArchitectureClassifier
 from app.architecture.remediation import ArchitectureRemediationEngine
 from app.architecture.adr_scanner import ADRScanner
 from app.architecture.rule_engine import ArchitectureRuleEngine
+from app.architecture.report_service import (
+    ArchitectureReportNotFoundError,
+    ArchitectureReportService,
+)
+from app.schemas.report import ArchitectureReportResponse
 from app.architecture.models import (
     ArchitectureEdge as DomainArchitectureEdge,
     ArchitectureGraph as DomainArchitectureGraph,
@@ -3533,3 +3538,66 @@ async def update_recommendation_status_org(
     await db.commit()
     await db.refresh(rec)
     return ArchitectureRecommendationResponse.model_validate(rec)
+
+
+@router.get(
+    "/report",
+    response_model=ArchitectureReportResponse,
+)
+async def get_architecture_report(
+    organization_id: Annotated[int, Path(gt=0)],
+    repository_id: Annotated[int, Path(gt=0)],
+    member: OrganizationMemberDependency,
+    db: AsyncSession = Depends(get_db),
+) -> ArchitectureReportResponse:
+    """
+    Retrieve a comprehensive, consolidated Full Architecture Intelligence Report
+    for a single repository.
+    """
+    service = ArchitectureReportService(db)
+    try:
+        return await service.generate_report(organization_id, repository_id)
+    except ArchitectureReportNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate architecture report: {exc}",
+        )
+
+
+@router.get(
+    "/report/markdown",
+)
+async def get_architecture_report_markdown(
+    organization_id: Annotated[int, Path(gt=0)],
+    repository_id: Annotated[int, Path(gt=0)],
+    member: OrganizationMemberDependency,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download the Full Architecture Intelligence Report as a standalone Markdown (.md) file.
+    """
+    service = ArchitectureReportService(db)
+    try:
+        report = await service.generate_report(organization_id, repository_id)
+        filename = f"coodara-architecture-report-{report.meta.repository_name}.md"
+        return Response(
+            content=report.markdown_content,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ArchitectureReportNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export report markdown: {exc}",
+        )
+

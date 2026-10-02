@@ -656,4 +656,132 @@ export interface ArchitectureQualityGateResponse {
   health_score: number;
   summary: string;
 }
+
+// ==========================================
+// Architecture Intelligence Report Types
+// ==========================================
+
+export interface ReportMeta {
+  repository_id: number;
+  repository_name: string;
+  organization_id: number;
+  primary_language?: string | null;
+  commit_sha?: string | null;
+  branch?: string | null;
+  analyzed_at: string;
+  analysis_job_id: number;
+  analyzer_version: string;
+  total_loc: number;
+  total_files: number;
+  total_classes: number;
+  total_functions: number;
+}
+
+export interface ReportExecutiveSummary {
+  detected_pattern: string;
+  pattern_category: string;
+  alignment_score: number;
+  health_score: number;
+  health_label: string;
+  maintainability: number;
+  modularity: number;
+  coupling: number;
+  complexity: number;
+  summary_text: string;
+  key_architecture_rules: string[];
+  anti_patterns_detected: string[];
+}
+
+export interface ReportTechnologyItem {
+  name: string;
+  version?: string | null;
+  confidence_score: number;
+}
+
+export interface ReportComponentItem {
+  id: string;
+  name: string;
+  type: string;
+  subsystem?: string | null;
+  file_path?: string | null;
+  description?: string | null;
+  responsibilities: string[];
+  efferent_coupling: number;
+  afferent_coupling: number;
+  instability_index: number;
+  is_increasingly_coupled: boolean;
+  issue_count: number;
+}
+
+export interface ReportDiagram {
+  mermaid_code: string;
+  node_count: number;
+  edge_count: number;
+  subsystems: string[];
+}
+
+export interface ReportDependencyHotspot {
+  source: string;
+  target: string;
+  kind: string;
+  is_intentional: boolean;
+  boundary_status: string;
+  rationale?: string | null;
+}
+
+export interface ReportEvidenceItem {
+  source_type: string;
+  file_path?: string | null;
+  line_number?: number | null;
+  snippet?: string | null;
+  description: string;
+}
+
+export interface ReportFindingItem {
+  id?: number | null;
+  category: string;
+  severity: string;
+  description: string;
+  status: string;
+  evidence: ReportEvidenceItem[];
+  affected_components: string[];
+  consequence?: string | null;
+}
+
+export interface ReportRecommendationItem {
+  id?: number | null;
+  priority: string;
+  summary: string;
+  action_plan?: string | null;
+  related_finding_ids: number[];
+}
+
+export interface ReportADRItem {
+  id: string;
+  title: string;
+  status: string;
+  path: string;
+}
+
+export interface ReportMethodology {
+  static_analysis_scope: string;
+  limitations: string[];
+  confidence_rationale: string;
+  generated_at: string;
+}
+
+export interface ArchitectureReportResponse {
+  meta: ReportMeta;
+  executive_summary: ReportExecutiveSummary;
+  technology_stack: ReportTechnologyItem[];
+  components: ReportComponentItem[];
+  diagram: ReportDiagram;
+  dependency_hotspots: ReportDependencyHotspot[];
+  findings: ReportFindingItem[];
+  recommendations: ReportRecommendationItem[];
+  adrs: ReportADRItem[];
+  methodology: ReportMethodology;
+  markdown_content: string;
+}
+
 
