@@ -410,12 +410,14 @@ export interface CostBreakdown {
   network: number;
   other: number;
   total_monthly: number;
+  network_modeled?: boolean;
+  database_modeled?: boolean;
 }
 
 export interface ClassifiedAssumption {
   field: string;
   value: string;
-  type: "ASSUMED" | "MEASURED" | "OBSERVED" | "MODELED";
+  type: "ASSUMED" | "MEASURED" | "OBSERVED" | "MODELED" | "SUPPLIED PRICING SNAPSHOT" | string;
   source: string;
 }
 
@@ -430,6 +432,7 @@ export interface EconomicEstimate {
   assumptions_classified: ClassifiedAssumption[];
   limitations: string[];
   validation_path: string[];
+  conventions?: Record<string, unknown>;
 }
 
 export interface EconomicComparison {

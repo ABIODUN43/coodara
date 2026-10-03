@@ -84,6 +84,8 @@ class CostBreakdown:
     storage: float
     network: float
     other: float
+    network_modeled: bool = True
+    database_modeled: bool = True
 
     @property
     def total_monthly(self) -> float:
@@ -107,6 +109,13 @@ class EconomicEstimate:
     assumptions_classified: list[dict[str, str]]
     limitations: list[str]
     validation_path: list[str]
+    conventions: dict[str, Any] = field(
+        default_factory=lambda: {
+            "hours_per_month": HOURS_PER_MONTH,
+            "days_per_month": DAYS_PER_MONTH,
+            "hours_per_day": HOURS_PER_DAY,
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -152,49 +161,71 @@ class ArchitecturalEconomicsService:
     def parse_vcpu(cpu_str: str | float | int | None) -> float:
         """Parse vCPU value from diverse formats (e.g. '2', '2 vCPU', '2000m', 2.0)."""
         if cpu_str is None:
-            return 1.0
+            raise EconomicInputValidationError("vCPU specification is required in ResourceProfile.")
         if isinstance(cpu_str, (int, float)):
-            return max(0.1, float(cpu_str))
+            val = float(cpu_str)
+            if val <= 0:
+                raise EconomicInputValidationError("vCPU must be strictly positive.")
+            return val
 
         raw = str(cpu_str).strip().lower()
+        if not raw:
+            raise EconomicInputValidationError("vCPU specification cannot be empty.")
         if raw.endswith("m"):  # Kubernetes millicores
             try:
-                return max(0.1, float(raw[:-1]) / 1000.0)
+                val = float(raw[:-1]) / 1000.0
+                if val <= 0:
+                    raise EconomicInputValidationError("vCPU must be strictly positive.")
+                return val
             except ValueError:
-                return 1.0
+                raise EconomicInputValidationError(f"Invalid vCPU millicores format: '{cpu_str}'")
 
-        match = re.search(r"([\d.]+)", raw)
+        match = re.search(r"^([\d.]+)", raw)
         if match:
             try:
-                return max(0.1, float(match.group(1)))
+                val = float(match.group(1))
+                if val <= 0:
+                    raise EconomicInputValidationError("vCPU must be strictly positive.")
+                return val
             except ValueError:
-                return 1.0
-        return 1.0
+                raise EconomicInputValidationError(f"Invalid vCPU format: '{cpu_str}'")
+        raise EconomicInputValidationError(f"Unable to parse vCPU from value: '{cpu_str}'")
 
     @staticmethod
     def parse_memory_gib(mem_str: str | float | int | None) -> float:
         """Parse memory in GiB from diverse formats (e.g. '4Gi', '4096Mi', '4GB', 4.0)."""
         if mem_str is None:
-            return 2.0
+            raise EconomicInputValidationError("Memory specification is required in ResourceProfile.")
         if isinstance(mem_str, (int, float)):
-            return max(0.25, float(mem_str))
+            val = float(mem_str)
+            if val <= 0:
+                raise EconomicInputValidationError("Memory must be strictly positive.")
+            return val
 
         raw = str(mem_str).strip().lower()
+        if not raw:
+            raise EconomicInputValidationError("Memory specification cannot be empty.")
         if "mi" in raw or "mb" in raw:
             match = re.search(r"([\d.]+)", raw)
             if match:
                 try:
-                    return max(0.25, float(match.group(1)) / 1024.0)
+                    val = float(match.group(1)) / 1024.0
+                    if val <= 0:
+                        raise EconomicInputValidationError("Memory must be strictly positive.")
+                    return val
                 except ValueError:
-                    return 2.0
+                    raise EconomicInputValidationError(f"Invalid memory MiB/MB format: '{mem_str}'")
 
-        match = re.search(r"([\d.]+)", raw)
+        match = re.search(r"^([\d.]+)", raw)
         if match:
             try:
-                return max(0.25, float(match.group(1)))
+                val = float(match.group(1))
+                if val <= 0:
+                    raise EconomicInputValidationError("Memory must be strictly positive.")
+                return val
             except ValueError:
-                return 2.0
-        return 2.0
+                raise EconomicInputValidationError(f"Invalid memory format: '{mem_str}'")
+        raise EconomicInputValidationError(f"Unable to parse memory from value: '{mem_str}'")
 
     # --------------------------------------------------------------------------
     # Deterministic Cost Model
@@ -209,14 +240,7 @@ class ArchitecturalEconomicsService:
         scaling_multiplier: float = 1.0,
     ) -> EconomicEstimate:
         """
-        Deterministically calculate infrastructure cost estimates from stored rate card.
-
-        Formulas:
-        - compute = vcpus * vcpu_hourly_rate * replicas * scaling_multiplier * 730
-        - memory = memory_gib * memory_hourly_rate * replicas * scaling_multiplier * 730
-        - database = db_hourly_rate * 730 (if db class configured)
-        - storage = storage_gb * storage_monthly_rate
-        - network = workload_rps * avg_kb_per_req * 86400 * 30.41 * egress_rate
+        Deterministically calculate infrastructure cost estimates from supplied rate card.
         """
         if scaling_multiplier <= 0:
             raise EconomicInputValidationError("Scaling multiplier must be strictly positive.")
@@ -224,18 +248,26 @@ class ArchitecturalEconomicsService:
         rates = pricing.pricing_data or {}
         currency = pricing.currency or "USD"
 
-        # Rate card units with fallback defaults based on standard cloud lists
-        vcpu_rate = float(rates.get("vcpu_hour", rates.get("compute_unit_hour", 0.0416)))
-        memory_rate = float(rates.get("memory_gib_hour", rates.get("ram_gib_hour", 0.0055)))
-        db_rate = float(rates.get("database_hour", rates.get("db_instance_hour", 0.1600)))
-        storage_rate = float(rates.get("storage_gb_month", rates.get("disk_gb_month", 0.1000)))
-        network_rate = float(rates.get("network_egress_gb", rates.get("egress_per_gb", 0.0800)))
+        # Rate card units: compute and memory are mandatory
+        vcpu_rate_val = rates.get("vcpu_hour") if "vcpu_hour" in rates else rates.get("compute_unit_hour")
+        if vcpu_rate_val is None:
+            raise PricingRateNotFoundError(
+                f"Missing required rate 'vcpu_hour' in PricingSnapshot '{pricing.pricing_source}' (id={pricing.id})"
+            )
+        vcpu_rate = float(vcpu_rate_val)
+
+        memory_rate_val = rates.get("memory_gib_hour") if "memory_gib_hour" in rates else rates.get("ram_gib_hour")
+        if memory_rate_val is None:
+            raise PricingRateNotFoundError(
+                f"Missing required rate 'memory_gib_hour' in PricingSnapshot '{pricing.pricing_source}' (id={pricing.id})"
+            )
+        memory_rate = float(memory_rate_val)
 
         # Parse resource sizing
         vcpus = self.parse_vcpu(resource.cpu)
         memory_gib = self.parse_memory_gib(resource.memory)
         replicas = max(1, resource.replicas if resource.replicas is not None else 1)
-        storage_gb = max(0.0, float(resource.storage_gb or 20.0))
+        storage_gb = max(0.0, float(resource.storage_gb if resource.storage_gb is not None else 0.0))
         has_database = bool(resource.database_class and resource.database_class.lower() not in ("none", "null", ""))
 
         effective_replicas = replicas * scaling_multiplier
@@ -253,37 +285,95 @@ class ArchitecturalEconomicsService:
         )
 
         # 3. Database Cost
-        monthly_database = round(db_rate * HOURS_PER_MONTH, 2) if has_database else 0.0
-        db_formula = (
-            f"{resource.database_class} × {currency} {db_rate:.4f}/hr × {HOURS_PER_MONTH} hrs/mo"
-            if has_database
-            else "No dedicated database instance configured in resource profile"
-        )
+        database_modeled: bool = True
+        monthly_database: float = 0.0
+        if has_database:
+            db_rate_val = rates.get("database_hour") if "database_hour" in rates else rates.get("db_instance_hour")
+            if db_rate_val is None:
+                database_modeled = False
+                monthly_database = 0.0
+                db_formula = (
+                    f"Database instance cost not modeled: missing 'database_hour' in PricingSnapshot rate card for {resource.database_class}"
+                )
+            else:
+                db_rate = float(db_rate_val)
+                monthly_database = round(db_rate * HOURS_PER_MONTH, 2)
+                db_formula = f"{resource.database_class} × {currency} {db_rate:.4f}/hr × {HOURS_PER_MONTH} hrs/mo"
+        else:
+            db_formula = "No dedicated database instance configured in resource profile"
 
         # 4. Storage Cost
-        monthly_storage = round(storage_gb * storage_rate, 2)
-        storage_formula = f"{storage_gb:.1f} GB × {currency} {storage_rate:.4f}/GB-mo"
+        storage_rate_val = rates.get("storage_gb_month") if "storage_gb_month" in rates else rates.get("disk_gb_month")
+        monthly_storage: float = 0.0
+        if storage_gb > 0:
+            if storage_rate_val is None:
+                monthly_storage = 0.0
+                storage_formula = "Storage cost not modeled: missing 'storage_gb_month' in PricingSnapshot rate card"
+            else:
+                storage_rate = float(storage_rate_val)
+                monthly_storage = round(storage_gb * storage_rate, 2)
+                storage_formula = f"{storage_gb:.1f} GB × {currency} {storage_rate:.4f}/GB-mo"
+        else:
+            storage_formula = "No persistent storage volume configured in resource profile"
 
-        # 5. Network / Egress Cost (derived from workload assumptions if available)
-        rps = float(workload.requests_per_second or 0.0) if workload else 0.0
+        # 5. Network / Egress Cost (requires explicit workload volume or request-size parameters)
         data_vol_gb = float(workload.data_volume_gb or 0.0) if workload else 0.0
+        workload_cfg = workload.configuration if (workload and isinstance(workload.configuration, dict)) else {}
+        monthly_egress_cfg = workload_cfg.get("monthly_egress_gb")
+        avg_kb_cfg = workload_cfg.get("average_egress_kb_per_request")
+
+        monthly_egress_gb: float | None = None
+        network_calculation_source = ""
 
         if data_vol_gb > 0:
             monthly_egress_gb = data_vol_gb
-            monthly_network = round(monthly_egress_gb * network_rate, 2)
-            network_formula = f"{monthly_egress_gb:.1f} GB egress × {currency} {network_rate:.4f}/GB"
-        elif rps > 0:
-            # Model 20 KB average payload per HTTP request
-            monthly_requests = rps * 86400 * DAYS_PER_MONTH
-            estimated_egress_gb = (monthly_requests * 20.0) / (1024.0 * 1024.0)
-            monthly_network = round(estimated_egress_gb * network_rate, 2)
-            network_formula = (
-                f"{rps:.1f} req/s (~{monthly_requests:,.0f} req/mo @ 20KB avg) = "
-                f"{estimated_egress_gb:.1f} GB × {currency} {network_rate:.4f}/GB"
-            )
+            network_calculation_source = f"{monthly_egress_gb:.1f} GB monthly data volume from WorkloadProfile"
+        elif monthly_egress_cfg is not None:
+            try:
+                val = float(monthly_egress_cfg)
+                if val > 0:
+                    monthly_egress_gb = val
+                    network_calculation_source = f"{monthly_egress_gb:.1f} GB monthly egress from configuration"
+            except (ValueError, TypeError):
+                pass
+
+        rps = float(workload.requests_per_second or 0.0) if workload else 0.0
+        if monthly_egress_gb is None and avg_kb_cfg is not None and rps > 0:
+            try:
+                avg_kb = float(avg_kb_cfg)
+                if avg_kb > 0:
+                    monthly_requests = rps * 86400 * DAYS_PER_MONTH
+                    monthly_egress_gb = (monthly_requests * avg_kb) / (1024.0 * 1024.0)
+                    network_calculation_source = (
+                        f"{rps:.1f} req/s (~{monthly_requests:,.0f} req/mo @ {avg_kb:.1f} KB avg payload)"
+                    )
+            except (ValueError, TypeError):
+                pass
+
+        network_modeled: bool = False
+        monthly_network: float = 0.0
+        if monthly_egress_gb is not None:
+            network_rate_val = rates.get("network_egress_gb") if "network_egress_gb" in rates else rates.get("egress_per_gb")
+            if network_rate_val is None:
+                network_modeled = False
+                monthly_network = 0.0
+                network_formula = (
+                    "Network egress cost not modeled: missing 'network_egress_gb' in PricingSnapshot rate card"
+                )
+            else:
+                network_rate = float(network_rate_val)
+                monthly_network = round(monthly_egress_gb * network_rate, 2)
+                network_modeled = True
+                network_formula = (
+                    f"{network_calculation_source} = {monthly_egress_gb:.2f} GB × {currency} {network_rate:.4f}/GB"
+                )
         else:
+            network_modeled = False
             monthly_network = 0.0
-            network_formula = "No network transfer or egress volume specified"
+            network_formula = (
+                "Network egress cost not modeled: explicit data_volume_gb, monthly_egress_gb, "
+                "or average_egress_kb_per_request required"
+            )
 
         breakdown = CostBreakdown(
             compute=monthly_compute,
@@ -292,6 +382,8 @@ class ArchitecturalEconomicsService:
             storage=monthly_storage,
             network=monthly_network,
             other=0.0,
+            network_modeled=network_modeled,
+            database_modeled=database_modeled,
         )
 
         monthly_total = breakdown.total_monthly
@@ -328,10 +420,17 @@ class ArchitecturalEconomicsService:
             {
                 "field": "Pricing Rate Card",
                 "value": f"{pricing.provider} ({pricing.region})",
-                "type": "MODELED",
-                "source": f"PricingSnapshot '{pricing.pricing_source}' captured {pricing.captured_at.strftime('%Y-%m-%d')}",
+                "type": "SUPPLIED PRICING SNAPSHOT",
+                "source": f"PricingSnapshot #{pricing.id} '{pricing.pricing_source}' captured {pricing.captured_at.strftime('%Y-%m-%d') if pricing.captured_at else 'unspecified'}",
             },
         ]
+        if monthly_egress_gb is not None:
+            assumptions_classified.append({
+                "field": "Network Egress Volume",
+                "value": f"{monthly_egress_gb:.2f} GB/mo",
+                "type": "MEASURED" if (workload and workload.is_measured) else "ASSUMED",
+                "source": network_calculation_source,
+            })
 
         limitations = [
             "Modeled estimate based purely on declared resource and workload assumptions.",
@@ -372,6 +471,11 @@ class ArchitecturalEconomicsService:
             assumptions_classified=assumptions_classified,
             limitations=limitations,
             validation_path=validation_path,
+            conventions={
+                "hours_per_month": HOURS_PER_MONTH,
+                "days_per_month": DAYS_PER_MONTH,
+                "hours_per_day": HOURS_PER_DAY,
+            },
         )
 
     # --------------------------------------------------------------------------
@@ -549,6 +653,7 @@ class ArchitecturalEconomicsService:
                 "annual": baseline_estimate.annual,
                 "breakdown": _breakdown_dict(baseline_estimate.breakdown),
                 "formulas": baseline_estimate.formulas,
+                "conventions": baseline_estimate.conventions,
             },
             "proposed": {
                 "hourly": proposed_estimate.hourly,
@@ -557,6 +662,7 @@ class ArchitecturalEconomicsService:
                 "annual": proposed_estimate.annual,
                 "breakdown": _breakdown_dict(proposed_estimate.breakdown),
                 "formulas": proposed_estimate.formulas,
+                "conventions": proposed_estimate.conventions,
             },
             "comparison": {
                 "absolute_difference": comparison.absolute_difference,
@@ -596,7 +702,8 @@ class ArchitecturalEconomicsService:
         evidence_claim = (
             f"Modeled monthly cost: {pricing.currency} {proposed_estimate.monthly:.2f} "
             f"(difference: {pricing.currency} {comparison.absolute_difference:+.2f} / "
-            f"{comparison.relative_difference_pct:+.1f}%) under {resource.name} and {pricing.pricing_source} assumptions."
+            f"{comparison.relative_difference_pct:+.1f}%) calculated from the supplied PricingSnapshot "
+            f"'{pricing.pricing_source}' ({pricing.provider} {pricing.region}) and {resource.name} assumptions."
         )
 
         evidence_provenance = {
@@ -605,16 +712,25 @@ class ArchitecturalEconomicsService:
             "run_id": run_id,
             "workload_profile_id": workload.id if workload else None,
             "resource_profile_id": resource.id,
-            "pricing_snapshot_id": pricing.id,
+            "pricing_snapshot": {
+                "id": pricing.id,
+                "provider": pricing.provider,
+                "region": pricing.region,
+                "currency": pricing.currency,
+                "pricing_source": pricing.pricing_source,
+                "captured_at": pricing.captured_at.isoformat() if pricing.captured_at else None,
+                "source_metadata": pricing.source_metadata,
+            },
             "calculator_version": "ArchitecturalEconomicsService v1.0",
             "calculated_at": calc_timestamp.isoformat(),
             "evidence_category": EvidenceCategory.MODELED.value,
             "evidence_category_justification": (
                 "MODELED category: cost projections are derived from configured workload and resource "
-                "assumptions applied to a captured pricing rate card. Does not represent observed runtime billing."
+                "assumptions applied to the supplied PricingSnapshot rate card. Does not represent observed runtime billing."
             ),
             "confidence_type": "deterministic_formula_projection",
             "confidence_rationale": "Exact arithmetic evaluation of declared rate cards; requires benchmark validation.",
+            "conventions": baseline_estimate.conventions,
         }
 
         evidence_item = EvidenceItem(

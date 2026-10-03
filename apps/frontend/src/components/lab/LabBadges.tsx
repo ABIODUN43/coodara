@@ -275,6 +275,12 @@ export function AssumptionTypeBadge({
           MODELED
         </span>
       );
+    case "SUPPLIED PRICING SNAPSHOT":
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
+          SUPPLIED PRICING SNAPSHOT
+        </span>
+      );
     default:
       return (
         <span className="inline-flex items-center gap-1 rounded bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-neutral-600 dark:text-neutral-400">

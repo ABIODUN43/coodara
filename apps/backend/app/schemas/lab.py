@@ -431,6 +431,8 @@ class CostBreakdownSchema(BaseModel):
     storage: float
     network: float
     other: float = 0.0
+    network_modeled: bool = True
+    database_modeled: bool = True
     total_monthly: float = 0.0
 
     def model_post_init(self, __context: Any) -> None:
@@ -446,7 +448,7 @@ class CostBreakdownSchema(BaseModel):
 
 
 class ClassifiedAssumptionSchema(BaseModel):
-    """Explicitly classified assumption (ASSUMED, MEASURED, OBSERVED, MODELED)."""
+    """Explicitly classified assumption (ASSUMED, MEASURED, OBSERVED, MODELED, SUPPLIED PRICING SNAPSHOT)."""
 
     field: str
     value: str
@@ -467,6 +469,7 @@ class EconomicEstimateSchema(BaseModel):
     assumptions_classified: list[ClassifiedAssumptionSchema] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     validation_path: list[str] = Field(default_factory=list)
+    conventions: dict[str, Any] = Field(default_factory=dict)
 
 
 class EconomicComparisonSchema(BaseModel):

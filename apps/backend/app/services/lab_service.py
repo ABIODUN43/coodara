@@ -51,6 +51,7 @@ from app.schemas.lab import (
     WorkloadProfileCreateRequest,
 )
 from app.services.architectural_economics_service import (
+    ArchitecturalEconomicsError,
     ArchitecturalEconomicsService,
     EconomicInputValidationError,
 )
@@ -584,8 +585,8 @@ class LabService:
         await self.db.commit()
         return created
 
-    async def _ensure_default_pricing_snapshots(self) -> None:
-        """Seed default reference cloud pricing snapshots if none exist."""
+    async def seed_reference_pricing_snapshots_for_testing(self) -> None:
+        """Explicit test-only helper to seed reference cloud pricing snapshots."""
         existing = await self.lab_repo.list_pricing_snapshots(limit=1)
         if existing:
             return
@@ -636,7 +637,6 @@ class LabService:
         provider: str | None = None,
         region: str | None = None,
     ) -> Sequence[PricingSnapshot]:
-        await self._ensure_default_pricing_snapshots()
         return await self.lab_repo.list_pricing_snapshots(
             provider=provider,
             region=region,
@@ -808,6 +808,10 @@ class LabService:
             repository_id=repository_id,
         )
 
+        pricing = await self.lab_repo.get_pricing_snapshot_by_id(payload.pricing_snapshot_id)
+        if pricing is None:
+            raise LabValidationError("Pricing snapshot required. No reference rate card has been captured or supplied.")
+
         econ_service = ArchitecturalEconomicsService(
             self.db,
             lab_repo=self.lab_repo,
@@ -826,7 +830,7 @@ class LabService:
                 description=payload.description,
                 proposed_resource_profile_id=payload.proposed_resource_profile_id,
             )
-        except EconomicInputValidationError as exc:
+        except ArchitecturalEconomicsError as exc:
             raise LabValidationError(str(exc)) from exc
 
         cost_outputs = scenario.estimated_cost_outputs or {}
@@ -849,6 +853,7 @@ class LabService:
             assumptions_classified=[ClassifiedAssumptionSchema(**a) for a in assumptions_classified],
             limitations=limitations,
             validation_path=validation_path,
+            conventions=baseline_raw.get("conventions", {}),
         )
 
         proposed_estimate = EconomicEstimateSchema(
@@ -862,6 +867,7 @@ class LabService:
             assumptions_classified=[ClassifiedAssumptionSchema(**a) for a in assumptions_classified],
             limitations=limitations,
             validation_path=validation_path,
+            conventions=proposed_raw.get("conventions", {}),
         )
 
         comparison_schema = EconomicComparisonSchema(
@@ -911,7 +917,7 @@ class LabService:
 
         pricing = await self.lab_repo.get_pricing_snapshot_by_id(payload.pricing_snapshot_id)
         if pricing is None:
-            raise LabResourceNotFoundError("Pricing snapshot not found.")
+            raise LabValidationError("Pricing snapshot required. No reference rate card has been captured or supplied.")
 
         workload = None
         if payload.workload_profile_id is not None:
@@ -924,17 +930,20 @@ class LabService:
             lab_repo=self.lab_repo,
             repo_repo=self.repo_repo,
         )
-        baseline_est = econ_service.calculate_estimate(
-            resource=baseline_resource,
-            workload=workload,
-            pricing=pricing,
-        )
-        proposed_est = econ_service.calculate_estimate(
-            resource=proposed_resource,
-            workload=workload,
-            pricing=pricing,
-        )
-        comparison = econ_service.compare_estimates(baseline_est, proposed_est)
+        try:
+            baseline_est = econ_service.calculate_estimate(
+                resource=baseline_resource,
+                workload=workload,
+                pricing=pricing,
+            )
+            proposed_est = econ_service.calculate_estimate(
+                resource=proposed_resource,
+                workload=workload,
+                pricing=pricing,
+            )
+            comparison = econ_service.compare_estimates(baseline_est, proposed_est)
+        except ArchitecturalEconomicsError as exc:
+            raise LabValidationError(str(exc)) from exc
 
         return EconomicComparisonSchema(
             baseline_monthly=comparison.baseline_monthly,
@@ -949,6 +958,8 @@ class LabService:
                 storage=baseline_est.breakdown.storage,
                 network=baseline_est.breakdown.network,
                 other=baseline_est.breakdown.other,
+                network_modeled=baseline_est.breakdown.network_modeled,
+                database_modeled=baseline_est.breakdown.database_modeled,
                 total_monthly=baseline_est.breakdown.total_monthly,
             ),
             proposed_breakdown=CostBreakdownSchema(
@@ -958,6 +969,8 @@ class LabService:
                 storage=proposed_est.breakdown.storage,
                 network=proposed_est.breakdown.network,
                 other=proposed_est.breakdown.other,
+                network_modeled=proposed_est.breakdown.network_modeled,
+                database_modeled=proposed_est.breakdown.database_modeled,
                 total_monthly=proposed_est.breakdown.total_monthly,
             ),
             explanation=comparison.explanation,

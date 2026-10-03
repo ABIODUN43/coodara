@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import {
+  AlertTriangle,
   Calculator,
   ChevronDown,
   ChevronRight,
@@ -179,9 +180,24 @@ export function ArchitecturalEconomicsPanel({
 
       {/* Assumptions Configuration Form */}
       <form onSubmit={handleEvaluate} className="space-y-4 rounded-xl border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-4">
-        <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
-          1. Configure Scenario Assumptions
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
+            1. Configure Scenario Assumptions
+          </span>
+          {pricingSnapshots.length === 0 && (
+            <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>Pricing snapshot required</span>
+            </span>
+          )}
+        </div>
+
+        {pricingSnapshots.length === 0 && (
+          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+            <span>Pricing snapshot required — please capture or import a rate card before modeling.</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
           {/* Baseline Resource Profile */}
@@ -240,15 +256,20 @@ export function ArchitecturalEconomicsPanel({
             <label className="font-semibold text-[var(--cd-ink)]">Pricing Rate Card</label>
             <select
               value={selectedPricingId}
-              onChange={(e) => setSelectedPricingId(Number(e.target.value))}
+              onChange={(e) => setSelectedPricingId(e.target.value ? Number(e.target.value) : "")}
               className="w-full rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1.5 text-xs text-[var(--cd-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--cd-accent)]"
               required
+              disabled={pricingSnapshots.length === 0}
             >
-              {pricingSnapshots.map((ps) => (
-                <option key={ps.id} value={ps.id}>
-                  {ps.provider} ({ps.region}) — {ps.currency}
-                </option>
-              ))}
+              {pricingSnapshots.length === 0 ? (
+                <option value="">No pricing snapshots available</option>
+              ) : (
+                pricingSnapshots.map((ps) => (
+                  <option key={ps.id} value={ps.id}>
+                    {ps.provider} ({ps.region}) — {ps.currency}
+                  </option>
+                ))
+              )}
             </select>
           </div>
         </div>
@@ -266,7 +287,7 @@ export function ArchitecturalEconomicsPanel({
 
           <button
             type="submit"
-            disabled={isEvaluating || !selectedResourceId || !selectedPricingId}
+            disabled={isEvaluating || !selectedResourceId || !selectedPricingId || pricingSnapshots.length === 0}
             className="cursor-pointer inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors disabled:opacity-50 shrink-0"
           >
             {isEvaluating ? (
@@ -413,10 +434,28 @@ export function ArchitecturalEconomicsPanel({
                 </tr>
                 <tr>
                   <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Database Instance</td>
-                  <td className="py-2.5 px-4 text-right">${baselineEstimate.breakdown.database.toFixed(2)}</td>
-                  <td className="py-2.5 px-4 text-right">${proposedEstimate.breakdown.database.toFixed(2)}</td>
+                  <td className="py-2.5 px-4 text-right">
+                    {baselineEstimate.breakdown.database_modeled !== false ? (
+                      `$${baselineEstimate.breakdown.database.toFixed(2)}`
+                    ) : (
+                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled (rate missing)</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-4 text-right">
+                    {proposedEstimate.breakdown.database_modeled !== false ? (
+                      `$${proposedEstimate.breakdown.database.toFixed(2)}`
+                    ) : (
+                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled (rate missing)</span>
+                    )}
+                  </td>
                   <td className="py-2.5 px-4 text-right font-semibold">
-                    {(proposedEstimate.breakdown.database - baselineEstimate.breakdown.database) > 0 ? `+$${(proposedEstimate.breakdown.database - baselineEstimate.breakdown.database).toFixed(2)}` : `$${(proposedEstimate.breakdown.database - baselineEstimate.breakdown.database).toFixed(2)}`}
+                    {baselineEstimate.breakdown.database_modeled !== false && proposedEstimate.breakdown.database_modeled !== false ? (
+                      (proposedEstimate.breakdown.database - baselineEstimate.breakdown.database) > 0
+                        ? `+$${(proposedEstimate.breakdown.database - baselineEstimate.breakdown.database).toFixed(2)}`
+                        : `$${(proposedEstimate.breakdown.database - baselineEstimate.breakdown.database).toFixed(2)}`
+                    ) : (
+                      <span className="text-[11px] text-[var(--cd-ink-faint)] font-normal italic">—</span>
+                    )}
                   </td>
                 </tr>
                 <tr>
@@ -429,10 +468,28 @@ export function ArchitecturalEconomicsPanel({
                 </tr>
                 <tr>
                   <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Network Egress / Transfer</td>
-                  <td className="py-2.5 px-4 text-right">${baselineEstimate.breakdown.network.toFixed(2)}</td>
-                  <td className="py-2.5 px-4 text-right">${proposedEstimate.breakdown.network.toFixed(2)}</td>
+                  <td className="py-2.5 px-4 text-right">
+                    {baselineEstimate.breakdown.network_modeled !== false ? (
+                      `$${baselineEstimate.breakdown.network.toFixed(2)}`
+                    ) : (
+                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled (explicit egress input required)</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-4 text-right">
+                    {proposedEstimate.breakdown.network_modeled !== false ? (
+                      `$${proposedEstimate.breakdown.network.toFixed(2)}`
+                    ) : (
+                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled</span>
+                    )}
+                  </td>
                   <td className="py-2.5 px-4 text-right font-semibold">
-                    {(proposedEstimate.breakdown.network - baselineEstimate.breakdown.network) > 0 ? `+$${(proposedEstimate.breakdown.network - baselineEstimate.breakdown.network).toFixed(2)}` : `$${(proposedEstimate.breakdown.network - baselineEstimate.breakdown.network).toFixed(2)}`}
+                    {baselineEstimate.breakdown.network_modeled !== false && proposedEstimate.breakdown.network_modeled !== false ? (
+                      (proposedEstimate.breakdown.network - baselineEstimate.breakdown.network) > 0
+                        ? `+$${(proposedEstimate.breakdown.network - baselineEstimate.breakdown.network).toFixed(2)}`
+                        : `$${(proposedEstimate.breakdown.network - baselineEstimate.breakdown.network).toFixed(2)}`
+                    ) : (
+                      <span className="text-[11px] text-[var(--cd-ink-faint)] font-normal italic">—</span>
+                    )}
                   </td>
                 </tr>
                 <tr className="bg-[var(--cd-surface)] font-bold border-t border-[var(--cd-border)]">
