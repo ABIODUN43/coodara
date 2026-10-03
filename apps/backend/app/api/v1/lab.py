@@ -19,6 +19,10 @@ from app.schemas.lab import (
     CostScenarioResponse,
     DecisionRecordCreateRequest,
     DecisionRecordResponse,
+    EconomicComparisonRequest,
+    EconomicComparisonSchema,
+    EconomicEvaluationRequest,
+    EconomicEvaluationResponse,
     EvidenceItemCreateRequest,
     EvidenceItemResponse,
     ExperimentCreateRequest,
@@ -775,6 +779,51 @@ async def list_cost_scenarios(
             experiment_id=experiment_id,
         )
         return [CostScenarioResponse.model_validate(s) for s in scenarios]
+    except Exception as exc:
+        _handle_lab_error(exc)
+
+
+@router.post(
+    "/cost-scenarios/evaluate",
+    response_model=EconomicEvaluationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Evaluate and persist architectural economics scenario",
+)
+async def evaluate_economic_scenario(
+    organization_id: int,
+    repository_id: int,
+    payload: EconomicEvaluationRequest,
+    member: OrganizationMemberDependency,
+    service: LabService = Depends(_get_lab_service),
+) -> EconomicEvaluationResponse:
+    try:
+        return await service.evaluate_economic_scenario(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            payload=payload,
+        )
+    except Exception as exc:
+        _handle_lab_error(exc)
+
+
+@router.post(
+    "/cost-scenarios/compare",
+    response_model=EconomicComparisonSchema,
+    summary="Compare baseline and proposed resource profiles under a pricing rate card",
+)
+async def compare_economic_profiles(
+    organization_id: int,
+    repository_id: int,
+    payload: EconomicComparisonRequest,
+    member: OrganizationMemberDependency,
+    service: LabService = Depends(_get_lab_service),
+) -> EconomicComparisonSchema:
+    try:
+        return await service.compare_economic_profiles(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            payload=payload,
+        )
     except Exception as exc:
         _handle_lab_error(exc)
 

@@ -389,4 +389,115 @@ describe("ArchitectureLabPage", () => {
       expect(screen.getByText("Record Decision")).toBeDefined();
     });
   });
+
+  it("evaluates architectural economics scenario and displays modeled cost deltas and transparent breakdown", async () => {
+    vi.spyOn(labApi, "listPricingSnapshots").mockResolvedValue([
+      {
+        id: 501,
+        provider: "AWS",
+        region: "us-east-1",
+        pricing_source: "AWS Rate Card",
+        currency: "USD",
+        captured_at: "2026-10-02T12:00:00Z",
+        pricing_data: { vcpu_hour: 0.04, memory_gib_hour: 0.005 },
+        source_metadata: {},
+        created_at: "2026-10-02T12:00:00Z",
+      },
+    ]);
+
+    vi.spyOn(labApi, "evaluateCostScenario").mockResolvedValue({
+      scenario: {
+        id: 601,
+        experiment_id: 201,
+        name: "Modeled Economics: Adapter Decoupling Benchmark",
+        currency: "USD",
+        assumptions: { assumptions_classified: [] },
+        estimated_cost_outputs: {},
+        calculation_metadata: {},
+        created_at: "2026-10-02T13:00:00Z",
+        updated_at: "2026-10-02T13:00:00Z",
+      },
+      evidence_item: {
+        id: 701,
+        organization_id: 1,
+        repository_id: 10,
+        experiment_id: 201,
+        category: "MODELED",
+        source_type: "ARCHITECTURAL_ECONOMICS",
+        subject: "Economic Footprint",
+        claim: "Modeled monthly cost: USD 140.00",
+        data: {},
+        confidence: 0.7,
+        provenance: {},
+        recorded_at: "2026-10-02T13:00:00Z",
+        created_at: "2026-10-02T13:00:00Z",
+      },
+      baseline: {
+        hourly: 0.25,
+        daily: 6.0,
+        monthly: 180.0,
+        annual: 2160.0,
+        currency: "USD",
+        breakdown: { compute: 100, memory: 40, database: 30, storage: 10, network: 0, other: 0, total_monthly: 180 },
+        formulas: { compute: "2 vCPU * 0.04/hr * 2 * 730" },
+        assumptions_classified: [
+          { field: "vCPU Capacity", value: "2 vCPU", type: "ASSUMED", source: "ResourceProfile" },
+        ],
+        limitations: ["Modeled estimate based on declared assumptions."],
+        validation_path: ["Run synthetic load benchmark in staging."],
+      },
+      proposed: {
+        hourly: 0.19,
+        daily: 4.6,
+        monthly: 140.0,
+        annual: 1680.0,
+        currency: "USD",
+        breakdown: { compute: 80, memory: 30, database: 20, storage: 10, network: 0, other: 0, total_monthly: 140 },
+        formulas: { compute: "1.5 vCPU * 0.04/hr * 2 * 730" },
+        assumptions_classified: [
+          { field: "vCPU Capacity", value: "1.5 vCPU", type: "ASSUMED", source: "ResourceProfile" },
+        ],
+        limitations: ["Modeled estimate based on declared assumptions."],
+        validation_path: ["Run synthetic load benchmark in staging."],
+      },
+      comparison: {
+        baseline_monthly: 180.0,
+        proposed_monthly: 140.0,
+        absolute_difference: -40.0,
+        relative_difference_pct: -22.2,
+        currency: "USD",
+        baseline_breakdown: { compute: 100, memory: 40, database: 30, storage: 10, network: 0, other: 0, total_monthly: 180 },
+        proposed_breakdown: { compute: 80, memory: 30, database: 20, storage: 10, network: 0, other: 0, total_monthly: 140 },
+        explanation: "The proposed scenario models USD 40.00/month lower cost (-22.2% reduction) under supplied assumptions.",
+        methodology_note: "Delta convention: Delta = Proposed - Baseline.",
+      },
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/lab?repoId=10&tab=experiments"]}>
+        <Routes>
+          <Route path="/lab" element={<ArchitectureLabPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Architectural Economics")).toBeDefined();
+      expect(screen.getByText("1. Configure Scenario Assumptions")).toBeDefined();
+    });
+
+    const evalBtn = screen.getByRole("button", { name: /Evaluate Architectural Economics/i });
+    expect(evalBtn).toBeDefined();
+
+    fireEvent.click(evalBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Baseline Architecture")).toBeDefined();
+      expect(screen.getByText("Proposed Architecture")).toBeDefined();
+      expect(screen.getByText("Modeled Difference (Δ)")).toBeDefined();
+      expect(screen.getByText("Infrastructure Component Breakdown")).toBeDefined();
+      expect(screen.getByText("Handoff to Decision Record (ADR)")).toBeDefined();
+    });
+  });
 });
+

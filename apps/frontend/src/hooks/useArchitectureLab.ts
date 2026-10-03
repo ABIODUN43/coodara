@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   cancelExperimentRun,
+  compareCostScenarios,
   createDecisionRecord,
   createEvidenceItem,
   createExperiment,
@@ -10,19 +11,27 @@ import {
   createResourceProfile,
   createWorkloadProfile,
   deleteHypothesis,
+  evaluateCostScenario,
   executeExperimentRun,
   getLabOverview,
+  listCostScenarios,
   listDecisionRecords,
   listEvidence,
   listExperiments,
   listHypotheses,
+  listPricingSnapshots,
   listResourceProfiles,
   listWorkloadProfiles,
   updateHypothesis,
 } from "@/api/lab";
 import type {
+  CostScenario,
   DecisionRecord,
   DecisionRecordCreateRequest,
+  EconomicComparison,
+  EconomicComparisonRequest,
+  EconomicEvaluationRequest,
+  EconomicEvaluationResponse,
   EvidenceItem,
   EvidenceItemCreateRequest,
   Experiment,
@@ -34,6 +43,7 @@ import type {
   Intervention,
   InterventionCreateRequest,
   LabOverviewResponse,
+  PricingSnapshot,
   ResourceProfile,
   ResourceProfileCreateRequest,
   WorkloadProfile,
@@ -50,6 +60,8 @@ export interface UseArchitectureLabReturn {
   resourceProfiles: ResourceProfile[];
   evidence: EvidenceItem[];
   decisions: DecisionRecord[];
+  pricingSnapshots: PricingSnapshot[];
+  costScenarios: CostScenario[];
   selectedHypothesis: Hypothesis | null;
   selectedExperiment: Experiment | null;
   selectHypothesis: (h: Hypothesis | null) => void;
@@ -66,6 +78,8 @@ export interface UseArchitectureLabReturn {
   addDecisionRecord: (payload: DecisionRecordCreateRequest) => Promise<DecisionRecord>;
   executeExperiment: (experimentId: number, runId?: number) => Promise<ExperimentRun>;
   cancelExperiment: (experimentId: number, runId: number) => Promise<ExperimentRun>;
+  evaluateEconomicScenario: (payload: EconomicEvaluationRequest) => Promise<EconomicEvaluationResponse>;
+  compareEconomicProfiles: (payload: EconomicComparisonRequest) => Promise<EconomicComparison>;
 }
 
 export function useArchitectureLab(
@@ -81,6 +95,8 @@ export function useArchitectureLab(
   const [resourceProfiles, setResourceProfiles] = useState<ResourceProfile[]>([]);
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
+  const [pricingSnapshots, setPricingSnapshots] = useState<PricingSnapshot[]>([]);
+  const [costScenarios, setCostScenarios] = useState<CostScenario[]>([]);
 
   const [selectedHypothesis, setSelectedHypothesis] = useState<Hypothesis | null>(null);
   const [selectedExperiment, setSelectedExperiment] = useState<Experiment | null>(null);
@@ -94,6 +110,8 @@ export function useArchitectureLab(
       setResourceProfiles([]);
       setEvidence([]);
       setDecisions([]);
+      setPricingSnapshots([]);
+      setCostScenarios([]);
       return;
     }
 
@@ -106,13 +124,15 @@ export function useArchitectureLab(
       setOverview(ov);
 
       // 2. Fetch full lists concurrently
-      const [allHyp, allExp, allWp, allRp, allEv, allDec] = await Promise.all([
+      const [allHyp, allExp, allWp, allRp, allEv, allDec, allPs, allCs] = await Promise.all([
         listHypotheses(orgId, repoId).catch(() => ov.hypotheses || []),
         listExperiments(orgId, repoId).catch(() => []),
         listWorkloadProfiles(orgId, repoId).catch(() => ov.workload_profiles || []),
         listResourceProfiles(orgId, repoId).catch(() => ov.resource_profiles || []),
         listEvidence(orgId, repoId).catch(() => ov.recent_evidence || []),
         listDecisionRecords(orgId, repoId).catch(() => ov.recent_decisions || []),
+        listPricingSnapshots(orgId, repoId).catch(() => []),
+        listCostScenarios(orgId, repoId).catch(() => []),
       ]);
 
       setHypotheses(allHyp);
@@ -121,6 +141,8 @@ export function useArchitectureLab(
       setResourceProfiles(allRp);
       setEvidence(allEv);
       setDecisions(allDec);
+      setPricingSnapshots(allPs);
+      setCostScenarios(allCs);
 
       // Keep selected items in sync if they still exist
       setSelectedHypothesis((prev) =>
@@ -327,6 +349,24 @@ export function useArchitectureLab(
     [orgId, repoId, refresh]
   );
 
+  const evaluateEconomicScenarioAction = useCallback(
+    async (payload: EconomicEvaluationRequest): Promise<EconomicEvaluationResponse> => {
+      if (!orgId || !repoId) throw new Error("Missing organization or repository ID");
+      const result = await evaluateCostScenario(orgId, repoId, payload);
+      await refresh();
+      return result;
+    },
+    [orgId, repoId, refresh]
+  );
+
+  const compareEconomicProfilesAction = useCallback(
+    async (payload: EconomicComparisonRequest): Promise<EconomicComparison> => {
+      if (!orgId || !repoId) throw new Error("Missing organization or repository ID");
+      return await compareCostScenarios(orgId, repoId, payload);
+    },
+    [orgId, repoId]
+  );
+
   return {
     loading,
     error,
@@ -337,6 +377,8 @@ export function useArchitectureLab(
     resourceProfiles,
     evidence,
     decisions,
+    pricingSnapshots,
+    costScenarios,
     selectedHypothesis,
     selectedExperiment,
     selectHypothesis: setSelectedHypothesis,
@@ -353,5 +395,8 @@ export function useArchitectureLab(
     addDecisionRecord,
     executeExperiment,
     cancelExperiment,
+    evaluateEconomicScenario: evaluateEconomicScenarioAction,
+    compareEconomicProfiles: compareEconomicProfilesAction,
   };
 }
+

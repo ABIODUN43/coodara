@@ -397,3 +397,76 @@ export interface LabOverviewResponse {
   recent_evidence: EvidenceItem[];
   recent_decisions: DecisionRecord[];
 }
+
+// =============================================================================
+// Architectural Economics Modeling Types
+// =============================================================================
+
+export interface CostBreakdown {
+  compute: number;
+  memory: number;
+  database: number;
+  storage: number;
+  network: number;
+  other: number;
+  total_monthly: number;
+}
+
+export interface ClassifiedAssumption {
+  field: string;
+  value: string;
+  type: "ASSUMED" | "MEASURED" | "OBSERVED" | "MODELED";
+  source: string;
+}
+
+export interface EconomicEstimate {
+  hourly: number;
+  daily: number;
+  monthly: number;
+  annual: number;
+  currency: string;
+  breakdown: CostBreakdown;
+  formulas: Record<string, string>;
+  assumptions_classified: ClassifiedAssumption[];
+  limitations: string[];
+  validation_path: string[];
+}
+
+export interface EconomicComparison {
+  baseline_monthly: number;
+  proposed_monthly: number;
+  absolute_difference: number;
+  relative_difference_pct: number;
+  currency: string;
+  baseline_breakdown: CostBreakdown;
+  proposed_breakdown: CostBreakdown;
+  explanation: string;
+  methodology_note: string;
+}
+
+export interface EconomicEvaluationRequest {
+  experiment_id: number;
+  run_id?: number | null;
+  resource_profile_id: number;
+  pricing_snapshot_id: number;
+  workload_profile_id?: number | null;
+  scenario_name: string;
+  description?: string | null;
+  proposed_resource_profile_id?: number | null;
+}
+
+export interface EconomicEvaluationResponse {
+  scenario: CostScenario;
+  evidence_item: EvidenceItem;
+  baseline: EconomicEstimate;
+  proposed: EconomicEstimate;
+  comparison: EconomicComparison;
+}
+
+export interface EconomicComparisonRequest {
+  baseline_resource_profile_id: number;
+  proposed_resource_profile_id: number;
+  pricing_snapshot_id: number;
+  workload_profile_id?: number | null;
+}
+

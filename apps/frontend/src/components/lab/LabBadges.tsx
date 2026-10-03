@@ -241,3 +241,46 @@ export function WorkloadMeasurementBadge({ isMeasured }: { isMeasured: boolean }
     </span>
   );
 }
+
+/**
+ * Assumption type badge (ASSUMED, MEASURED, OBSERVED, MODELED).
+ */
+export function AssumptionTypeBadge({
+  type,
+}: {
+  type: "ASSUMED" | "MEASURED" | "OBSERVED" | "MODELED" | string;
+}) {
+  switch (type) {
+    case "MEASURED":
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+          MEASURED
+        </span>
+      );
+    case "OBSERVED":
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-sky-700 dark:text-sky-300 border border-sky-500/20">
+          OBSERVED
+        </span>
+      );
+    case "ASSUMED":
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-amber-700 dark:text-amber-300 border border-amber-500/20">
+          ASSUMED
+        </span>
+      );
+    case "MODELED":
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-purple-700 dark:text-purple-300 border border-purple-500/20">
+          MODELED
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 rounded bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-neutral-600 dark:text-neutral-400">
+          {type}
+        </span>
+      );
+  }
+}
+

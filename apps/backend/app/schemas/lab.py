@@ -415,3 +415,102 @@ class LabOverviewResponse(BaseModel):
     recent_decisions: list[DecisionRecordResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==============================================================================
+# Architectural Economics Modeling Schemas
+# ==============================================================================
+
+
+class CostBreakdownSchema(BaseModel):
+    """Categorized breakdown of modeled infrastructure costs."""
+
+    compute: float
+    memory: float
+    database: float
+    storage: float
+    network: float
+    other: float = 0.0
+    total_monthly: float = 0.0
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.total_monthly == 0.0:
+            object.__setattr__(
+                self,
+                "total_monthly",
+                round(
+                    self.compute + self.memory + self.database + self.storage + self.network + self.other,
+                    2,
+                ),
+            )
+
+
+class ClassifiedAssumptionSchema(BaseModel):
+    """Explicitly classified assumption (ASSUMED, MEASURED, OBSERVED, MODELED)."""
+
+    field: str
+    value: str
+    type: str
+    source: str
+
+
+class EconomicEstimateSchema(BaseModel):
+    """Multi-horizon cost estimate with complete formulas and limitations."""
+
+    hourly: float
+    daily: float
+    monthly: float
+    annual: float
+    currency: str
+    breakdown: CostBreakdownSchema
+    formulas: dict[str, str] = Field(default_factory=dict)
+    assumptions_classified: list[ClassifiedAssumptionSchema] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    validation_path: list[str] = Field(default_factory=list)
+
+
+class EconomicComparisonSchema(BaseModel):
+    """Neutral comparative analysis between baseline and proposed architectures."""
+
+    baseline_monthly: float
+    proposed_monthly: float
+    absolute_difference: float
+    relative_difference_pct: float
+    currency: str
+    baseline_breakdown: CostBreakdownSchema
+    proposed_breakdown: CostBreakdownSchema
+    explanation: str
+    methodology_note: str
+
+
+class EconomicEvaluationRequest(BaseModel):
+    """Payload to evaluate and persist an architectural economics scenario."""
+
+    experiment_id: int
+    run_id: int | None = None
+    resource_profile_id: int
+    pricing_snapshot_id: int
+    workload_profile_id: int | None = None
+    scenario_name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    proposed_resource_profile_id: int | None = None
+
+
+class EconomicEvaluationResponse(BaseModel):
+    """Complete evaluation result including persisted scenario, evidence, and estimates."""
+
+    scenario: CostScenarioResponse
+    evidence_item: EvidenceItemResponse
+    baseline: EconomicEstimateSchema
+    proposed: EconomicEstimateSchema
+    comparison: EconomicComparisonSchema
+
+
+class EconomicComparisonRequest(BaseModel):
+    """Payload to compare two resource profiles without persisting a scenario."""
+
+    baseline_resource_profile_id: int
+    proposed_resource_profile_id: int
+    pricing_snapshot_id: int
+    workload_profile_id: int | None = None
+

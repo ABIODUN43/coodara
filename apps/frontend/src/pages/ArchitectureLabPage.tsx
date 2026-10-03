@@ -356,6 +356,11 @@ export function ArchitectureLabPage() {
                 onExecuteExperiment={lab.executeExperiment}
                 onCancelExperiment={lab.cancelExperiment}
                 onRecordDecision={(exp) => handleOpenRecordDecision(exp.hypothesis_id)}
+                resourceProfiles={lab.resourceProfiles}
+                workloadProfiles={lab.workloadProfiles}
+                pricingSnapshots={lab.pricingSnapshots}
+                costScenarios={lab.costScenarios}
+                onEvaluateEconomicScenario={lab.evaluateEconomicScenario}
               />
             )}
 

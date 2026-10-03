@@ -11,6 +11,10 @@ import type {
   CostScenarioCreateRequest,
   DecisionRecord,
   DecisionRecordCreateRequest,
+  EconomicComparison,
+  EconomicComparisonRequest,
+  EconomicEvaluationRequest,
+  EconomicEvaluationResponse,
   EvidenceCategory,
   EvidenceItem,
   EvidenceItemCreateRequest,
@@ -26,6 +30,7 @@ import type {
   Intervention,
   InterventionCreateRequest,
   LabOverviewResponse,
+  PricingSnapshot,
   ResourceProfile,
   ResourceProfileCreateRequest,
   WorkloadProfile,
@@ -384,3 +389,47 @@ export async function createDecisionRecord(
   );
   return data;
 }
+
+// =============================================================================
+// Architectural Economics & Pricing Snapshots
+// =============================================================================
+
+export async function listPricingSnapshots(
+  orgId: string | number,
+  repoId: string | number,
+  provider?: string,
+  region?: string
+): Promise<PricingSnapshot[]> {
+  const { data } = await api.get<PricingSnapshot[]>(
+    `${getLabBaseUrl(orgId, repoId)}/pricing-snapshots`,
+    {
+      params: { provider, region },
+    }
+  );
+  return data;
+}
+
+export async function evaluateCostScenario(
+  orgId: string | number,
+  repoId: string | number,
+  payload: EconomicEvaluationRequest
+): Promise<EconomicEvaluationResponse> {
+  const { data } = await api.post<EconomicEvaluationResponse>(
+    `${getLabBaseUrl(orgId, repoId)}/cost-scenarios/evaluate`,
+    payload
+  );
+  return data;
+}
+
+export async function compareCostScenarios(
+  orgId: string | number,
+  repoId: string | number,
+  payload: EconomicComparisonRequest
+): Promise<EconomicComparison> {
+  const { data } = await api.post<EconomicComparison>(
+    `${getLabBaseUrl(orgId, repoId)}/cost-scenarios/compare`,
+    payload
+  );
+  return data;
+}
+

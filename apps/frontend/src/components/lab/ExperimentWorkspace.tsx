@@ -12,8 +12,18 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import type { Experiment, Hypothesis } from "@/types/lab";
+import type {
+  CostScenario,
+  EconomicEvaluationRequest,
+  EconomicEvaluationResponse,
+  Experiment,
+  Hypothesis,
+  PricingSnapshot,
+  ResourceProfile,
+  WorkloadProfile,
+} from "@/types/lab";
 import { ExperimentStatusBadge } from "./LabBadges";
+import { ArchitecturalEconomicsPanel } from "./ArchitecturalEconomicsPanel";
 
 interface ExperimentWorkspaceProps {
   experiments: Experiment[];
@@ -23,7 +33,12 @@ interface ExperimentWorkspaceProps {
   onOpenNewExperiment: () => void;
   onExecuteExperiment?: (experimentId: number, runId?: number) => Promise<unknown>;
   onCancelExperiment?: (experimentId: number, runId: number) => Promise<unknown>;
-  onRecordDecision?: (experiment: Experiment) => void;
+  onRecordDecision?: (experiment: Experiment, defaultRationale?: string) => void;
+  resourceProfiles?: ResourceProfile[];
+  workloadProfiles?: WorkloadProfile[];
+  pricingSnapshots?: PricingSnapshot[];
+  costScenarios?: CostScenario[];
+  onEvaluateEconomicScenario?: (payload: EconomicEvaluationRequest) => Promise<EconomicEvaluationResponse>;
 }
 
 export function ExperimentWorkspace({
@@ -35,6 +50,11 @@ export function ExperimentWorkspace({
   onExecuteExperiment,
   onCancelExperiment,
   onRecordDecision,
+  resourceProfiles = [],
+  workloadProfiles = [],
+  pricingSnapshots = [],
+  costScenarios = [],
+  onEvaluateEconomicScenario,
 }: ExperimentWorkspaceProps) {
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
@@ -505,6 +525,19 @@ export function ExperimentWorkspace({
                     </div>
                   </div>
                 )}
+
+                {/* Architectural Economics Modeling Panel */}
+                <div className="pt-2">
+                  <ArchitecturalEconomicsPanel
+                    experiment={activeExp}
+                    resourceProfiles={resourceProfiles}
+                    workloadProfiles={workloadProfiles}
+                    pricingSnapshots={pricingSnapshots}
+                    costScenarios={costScenarios}
+                    onEvaluateScenario={onEvaluateEconomicScenario}
+                    onRecordDecision={onRecordDecision}
+                  />
+                </div>
               </div>
             )}
           </div>

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.models.lab import (
     CostScenario,
@@ -28,9 +28,18 @@ from app.models.lab import (
 from app.repositories.lab_repository import LabRepository
 from app.repositories.repository_repository import RepositoryRepository
 from app.schemas.lab import (
+    ClassifiedAssumptionSchema,
+    CostBreakdownSchema,
     CostScenarioCreateRequest,
+    CostScenarioResponse,
     DecisionRecordCreateRequest,
+    EconomicComparisonRequest,
+    EconomicComparisonSchema,
+    EconomicEstimateSchema,
+    EconomicEvaluationRequest,
+    EconomicEvaluationResponse,
     EvidenceItemCreateRequest,
+    EvidenceItemResponse,
     ExperimentCreateRequest,
     ExperimentRunCreateRequest,
     HypothesisCreateRequest,
@@ -40,6 +49,10 @@ from app.schemas.lab import (
     PricingSnapshotCreateRequest,
     ResourceProfileCreateRequest,
     WorkloadProfileCreateRequest,
+)
+from app.services.architectural_economics_service import (
+    ArchitecturalEconomicsService,
+    EconomicInputValidationError,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -571,11 +584,59 @@ class LabService:
         await self.db.commit()
         return created
 
+    async def _ensure_default_pricing_snapshots(self) -> None:
+        """Seed default reference cloud pricing snapshots if none exist."""
+        existing = await self.lab_repo.list_pricing_snapshots(limit=1)
+        if existing:
+            return
+
+        now = datetime.now(timezone.utc)
+        aws_snapshot = PricingSnapshot(
+            provider="AWS",
+            region="us-east-1",
+            pricing_source="AWS Standard On-Demand (2026-Q1)",
+            currency="USD",
+            captured_at=now,
+            pricing_data={
+                "vcpu_hour": 0.04048,
+                "memory_gib_hour": 0.004445,
+                "database_hour": 0.0680,
+                "storage_gb_month": 0.0800,
+                "network_egress_gb": 0.0900,
+            },
+            source_metadata={
+                "description": "Standard AWS EC2 / RDS General Purpose rates for US East (N. Virginia)",
+                "confidence": "high",
+            },
+        )
+        gcp_snapshot = PricingSnapshot(
+            provider="GCP",
+            region="us-central1",
+            pricing_source="Google Cloud Compute Engine (2026-Q1)",
+            currency="USD",
+            captured_at=now,
+            pricing_data={
+                "vcpu_hour": 0.0385,
+                "memory_gib_hour": 0.0051,
+                "database_hour": 0.0650,
+                "storage_gb_month": 0.0800,
+                "network_egress_gb": 0.0850,
+            },
+            source_metadata={
+                "description": "Standard GCP E2 / Cloud SQL General Purpose rates for US Central (Iowa)",
+                "confidence": "high",
+            },
+        )
+        await self.lab_repo.create_pricing_snapshot(aws_snapshot)
+        await self.lab_repo.create_pricing_snapshot(gcp_snapshot)
+        await self.db.commit()
+
     async def list_pricing_snapshots(
         self,
         provider: str | None = None,
         region: str | None = None,
     ) -> Sequence[PricingSnapshot]:
+        await self._ensure_default_pricing_snapshots()
         return await self.lab_repo.list_pricing_snapshots(
             provider=provider,
             region=region,
@@ -729,6 +790,180 @@ class LabService:
             )
 
         return await self.lab_repo.list_cost_scenarios(experiment_id=experiment_id)
+
+    async def evaluate_economic_scenario(
+        self,
+        *,
+        organization_id: int,
+        repository_id: int,
+        payload: EconomicEvaluationRequest,
+    ) -> EconomicEvaluationResponse:
+        """
+        Evaluate modeled economic consequence of baseline vs proposed architecture
+        under explicit workload, resource, and pricing snapshot assumptions.
+        Persists both CostScenario and EvidenceItem (MODELED category).
+        """
+        await self._verify_repository_ownership(
+            organization_id=organization_id,
+            repository_id=repository_id,
+        )
+
+        econ_service = ArchitecturalEconomicsService(
+            self.db,
+            lab_repo=self.lab_repo,
+            repo_repo=self.repo_repo,
+        )
+        try:
+            scenario, evidence = await econ_service.evaluate_and_persist_scenario(
+                organization_id=organization_id,
+                repository_id=repository_id,
+                experiment_id=payload.experiment_id,
+                run_id=payload.run_id,
+                workload_profile_id=payload.workload_profile_id,
+                resource_profile_id=payload.resource_profile_id,
+                pricing_snapshot_id=payload.pricing_snapshot_id,
+                scenario_name=payload.scenario_name,
+                description=payload.description,
+                proposed_resource_profile_id=payload.proposed_resource_profile_id,
+            )
+        except EconomicInputValidationError as exc:
+            raise LabValidationError(str(exc)) from exc
+
+        cost_outputs = scenario.estimated_cost_outputs or {}
+        baseline_raw = cost_outputs.get("baseline", {})
+        proposed_raw = cost_outputs.get("proposed", {})
+        comparison_raw = cost_outputs.get("comparison", {})
+        limitations = cost_outputs.get("limitations", [])
+        validation_path = cost_outputs.get("validation_path", [])
+        assumptions = scenario.assumptions or {}
+        assumptions_classified = assumptions.get("assumptions_classified", [])
+
+        baseline_estimate = EconomicEstimateSchema(
+            hourly=baseline_raw.get("hourly", 0.0),
+            daily=baseline_raw.get("daily", 0.0),
+            monthly=baseline_raw.get("monthly", 0.0),
+            annual=baseline_raw.get("annual", 0.0),
+            currency=scenario.currency,
+            breakdown=CostBreakdownSchema(**baseline_raw.get("breakdown", {})),
+            formulas=baseline_raw.get("formulas", {}),
+            assumptions_classified=[ClassifiedAssumptionSchema(**a) for a in assumptions_classified],
+            limitations=limitations,
+            validation_path=validation_path,
+        )
+
+        proposed_estimate = EconomicEstimateSchema(
+            hourly=proposed_raw.get("hourly", 0.0),
+            daily=proposed_raw.get("daily", 0.0),
+            monthly=proposed_raw.get("monthly", 0.0),
+            annual=proposed_raw.get("annual", 0.0),
+            currency=scenario.currency,
+            breakdown=CostBreakdownSchema(**proposed_raw.get("breakdown", {})),
+            formulas=proposed_raw.get("formulas", {}),
+            assumptions_classified=[ClassifiedAssumptionSchema(**a) for a in assumptions_classified],
+            limitations=limitations,
+            validation_path=validation_path,
+        )
+
+        comparison_schema = EconomicComparisonSchema(
+            baseline_monthly=baseline_estimate.monthly,
+            proposed_monthly=proposed_estimate.monthly,
+            absolute_difference=comparison_raw.get("absolute_difference", 0.0),
+            relative_difference_pct=comparison_raw.get("relative_difference_pct", 0.0),
+            currency=scenario.currency,
+            baseline_breakdown=baseline_estimate.breakdown,
+            proposed_breakdown=proposed_estimate.breakdown,
+            explanation=comparison_raw.get("explanation", ""),
+            methodology_note=comparison_raw.get("methodology_note", ""),
+        )
+
+        return EconomicEvaluationResponse(
+            scenario=CostScenarioResponse.model_validate(scenario),
+            evidence_item=EvidenceItemResponse.model_validate(evidence),
+            baseline=baseline_estimate,
+            proposed=proposed_estimate,
+            comparison=comparison_schema,
+        )
+
+    async def compare_economic_profiles(
+        self,
+        *,
+        organization_id: int,
+        repository_id: int,
+        payload: EconomicComparisonRequest,
+    ) -> EconomicComparisonSchema:
+        """Compare baseline and proposed resource profiles under a rate card without persisting."""
+        await self._verify_repository_ownership(
+            organization_id=organization_id,
+            repository_id=repository_id,
+        )
+
+        baseline_resource = await self.lab_repo.get_resource_profile_by_id(
+            payload.baseline_resource_profile_id, repository_id=repository_id
+        )
+        if baseline_resource is None:
+            raise LabResourceNotFoundError("Baseline resource profile not found.")
+
+        proposed_resource = await self.lab_repo.get_resource_profile_by_id(
+            payload.proposed_resource_profile_id, repository_id=repository_id
+        )
+        if proposed_resource is None:
+            raise LabResourceNotFoundError("Proposed resource profile not found.")
+
+        pricing = await self.lab_repo.get_pricing_snapshot_by_id(payload.pricing_snapshot_id)
+        if pricing is None:
+            raise LabResourceNotFoundError("Pricing snapshot not found.")
+
+        workload = None
+        if payload.workload_profile_id is not None:
+            workload = await self.lab_repo.get_workload_profile_by_id(
+                payload.workload_profile_id, repository_id=repository_id
+            )
+
+        econ_service = ArchitecturalEconomicsService(
+            self.db,
+            lab_repo=self.lab_repo,
+            repo_repo=self.repo_repo,
+        )
+        baseline_est = econ_service.calculate_estimate(
+            resource=baseline_resource,
+            workload=workload,
+            pricing=pricing,
+        )
+        proposed_est = econ_service.calculate_estimate(
+            resource=proposed_resource,
+            workload=workload,
+            pricing=pricing,
+        )
+        comparison = econ_service.compare_estimates(baseline_est, proposed_est)
+
+        return EconomicComparisonSchema(
+            baseline_monthly=comparison.baseline_monthly,
+            proposed_monthly=comparison.proposed_monthly,
+            absolute_difference=comparison.absolute_difference,
+            relative_difference_pct=comparison.relative_difference_pct,
+            currency=comparison.currency,
+            baseline_breakdown=CostBreakdownSchema(
+                compute=baseline_est.breakdown.compute,
+                memory=baseline_est.breakdown.memory,
+                database=baseline_est.breakdown.database,
+                storage=baseline_est.breakdown.storage,
+                network=baseline_est.breakdown.network,
+                other=baseline_est.breakdown.other,
+                total_monthly=baseline_est.breakdown.total_monthly,
+            ),
+            proposed_breakdown=CostBreakdownSchema(
+                compute=proposed_est.breakdown.compute,
+                memory=proposed_est.breakdown.memory,
+                database=proposed_est.breakdown.database,
+                storage=proposed_est.breakdown.storage,
+                network=proposed_est.breakdown.network,
+                other=proposed_est.breakdown.other,
+                total_monthly=proposed_est.breakdown.total_monthly,
+            ),
+            explanation=comparison.explanation,
+            methodology_note=comparison.methodology_note,
+        )
+
 
     # ==========================================================================
     # Decision Records
