@@ -360,7 +360,7 @@ export function ExperimentWorkspace({
                             <th className="py-2.5 px-4 font-semibold">Architectural Metric</th>
                             <th className="py-2.5 px-4 font-semibold">Baseline</th>
                             <th className="py-2.5 px-4 font-semibold">Proposed</th>
-                            <th className="py-2.5 px-4 font-semibold">Delta</th>
+                            <th className="py-2.5 px-4 font-semibold">Delta (Proposed &minus; Baseline)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--cd-border-soft)] font-mono">
@@ -368,9 +368,7 @@ export function ExperimentWorkspace({
                             <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Components</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.components ?? "—"}</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.components ?? "—"}</td>
-                            <td className={`py-2.5 px-4 font-semibold ${
-                              (diffs.components || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : (diffs.components || 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--cd-ink-soft)]"
-                            }`}>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)] font-semibold">
                               {(diffs.components || 0) > 0 ? `+${diffs.components}` : (diffs.components ?? 0)}
                             </td>
                           </tr>
@@ -379,9 +377,7 @@ export function ExperimentWorkspace({
                             <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Dependencies</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.dependencies ?? "—"}</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.dependencies ?? "—"}</td>
-                            <td className={`py-2.5 px-4 font-semibold ${
-                              (diffs.dependencies || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : (diffs.dependencies || 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--cd-ink-soft)]"
-                            }`}>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)] font-semibold">
                               {(diffs.dependencies || 0) > 0 ? `+${diffs.dependencies}` : (diffs.dependencies ?? 0)}
                             </td>
                           </tr>
@@ -390,9 +386,7 @@ export function ExperimentWorkspace({
                             <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Efferent Coupling (Ce)</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.efferent_coupling ?? "—"}</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.efferent_coupling ?? "—"}</td>
-                            <td className={`py-2.5 px-4 font-semibold ${
-                              (diffs.efferent_coupling || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : (diffs.efferent_coupling || 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--cd-ink-soft)]"
-                            }`}>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)] font-semibold">
                               {(diffs.efferent_coupling || 0) > 0 ? `+${diffs.efferent_coupling}` : (diffs.efferent_coupling ?? 0)}
                             </td>
                           </tr>
@@ -401,7 +395,7 @@ export function ExperimentWorkspace({
                             <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Instability Index (I)</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.instability ?? "—"}</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.instability ?? "—"}</td>
-                            <td className="py-2.5 px-4 text-[var(--cd-ink-soft)] font-semibold">
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)] font-semibold">
                               {(diffs.instability || 0) > 0 ? `+${diffs.instability}` : (diffs.instability ?? 0)}
                             </td>
                           </tr>
@@ -410,7 +404,7 @@ export function ExperimentWorkspace({
                             <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Boundary Violations / Crossings</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.boundary_crossings ?? 0}</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.boundary_crossings ?? 0}</td>
-                            <td className="py-2.5 px-4 text-[var(--cd-ink-soft)] font-semibold">
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)] font-semibold">
                               {(diffs.boundary_crossings || 0) > 0 ? `+${diffs.boundary_crossings}` : (diffs.boundary_crossings ?? 0)}
                             </td>
                           </tr>
@@ -419,9 +413,7 @@ export function ExperimentWorkspace({
                             <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Architecture Issues Detected</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.issues_count ?? "—"}</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.issues_count ?? "—"}</td>
-                            <td className={`py-2.5 px-4 font-semibold ${
-                              (diffs.issues_count || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-[var(--cd-ink-soft)]"
-                            }`}>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)] font-semibold">
                               {(diffs.issues_count || 0) > 0 ? `+${diffs.issues_count}` : (diffs.issues_count ?? 0)}
                             </td>
                           </tr>
@@ -430,13 +422,16 @@ export function ExperimentWorkspace({
                             <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Maintainability Score</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.maintainability ?? "—"}</td>
                             <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.maintainability ?? "—"}</td>
-                            <td className="py-2.5 px-4 text-[var(--cd-ink-soft)] font-semibold">
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)] font-semibold">
                               {(diffs.maintainability || 0) > 0 ? `+${diffs.maintainability}` : (diffs.maintainability ?? 0)}
                             </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
+                    <p className="text-[11px] text-[var(--cd-ink-faint)] italic">
+                      Delta convention: &Delta; = Proposed &minus; Baseline. Structural deltas report topological alterations; architectural fitness is interpreted by engineering context.
+                    </p>
 
                     {/* Direct Impacts Card */}
                     {resultData.direct_impacts && resultData.direct_impacts.length > 0 && (

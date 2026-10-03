@@ -72,20 +72,41 @@ def test_valid_state_transitions() -> None:
 
 
 def test_invalid_state_transitions() -> None:
-    """Verify illegal transitions are strictly rejected."""
-    # Terminal states cannot transition
-    with pytest.raises(InvalidStateTransitionError):
-        validate_state_transition(ExperimentRunStatus.COMPLETED.value, ExperimentRunStatus.RUNNING.value)
-
-    with pytest.raises(InvalidStateTransitionError):
-        validate_state_transition(ExperimentRunStatus.FAILED.value, ExperimentRunStatus.RUNNING.value)
-
-    with pytest.raises(InvalidStateTransitionError):
-        validate_state_transition(ExperimentRunStatus.CANCELLED.value, ExperimentRunStatus.RUNNING.value)
+    """Verify illegal transitions are strictly rejected across all lifecycle states."""
+    # Terminal states cannot transition to anything
+    for terminal in (
+        ExperimentRunStatus.COMPLETED.value,
+        ExperimentRunStatus.FAILED.value,
+        ExperimentRunStatus.CANCELLED.value,
+    ):
+        for target in (
+            ExperimentRunStatus.PENDING.value,
+            ExperimentRunStatus.READY.value,
+            ExperimentRunStatus.RUNNING.value,
+            ExperimentRunStatus.COMPLETED.value,
+            ExperimentRunStatus.FAILED.value,
+            ExperimentRunStatus.CANCELLED.value,
+        ):
+            with pytest.raises(InvalidStateTransitionError):
+                validate_state_transition(terminal, target)
 
     # Illegal forward jumps
     with pytest.raises(InvalidStateTransitionError):
         validate_state_transition(ExperimentRunStatus.PENDING.value, ExperimentRunStatus.COMPLETED.value)
+    with pytest.raises(InvalidStateTransitionError):
+        validate_state_transition(ExperimentRunStatus.PENDING.value, ExperimentRunStatus.FAILED.value)
+    with pytest.raises(InvalidStateTransitionError):
+        validate_state_transition(ExperimentRunStatus.READY.value, ExperimentRunStatus.COMPLETED.value)
+    with pytest.raises(InvalidStateTransitionError):
+        validate_state_transition(ExperimentRunStatus.READY.value, ExperimentRunStatus.FAILED.value)
+
+    # Illegal backward transitions
+    with pytest.raises(InvalidStateTransitionError):
+        validate_state_transition(ExperimentRunStatus.RUNNING.value, ExperimentRunStatus.PENDING.value)
+    with pytest.raises(InvalidStateTransitionError):
+        validate_state_transition(ExperimentRunStatus.RUNNING.value, ExperimentRunStatus.READY.value)
+    with pytest.raises(InvalidStateTransitionError):
+        validate_state_transition(ExperimentRunStatus.READY.value, ExperimentRunStatus.PENDING.value)
 
 
 # ==============================================================================
@@ -182,6 +203,10 @@ async def test_create_and_execute_experiment_run() -> None:
     assert "metrics_after" in result
     assert "differences" in result
     assert "direct_impacts" in result
+    assert result["metric_delta_convention"] == "delta = proposed - baseline"
+    assert "baseline_evaluated_reference" in result
+    assert "proposed_evaluated_reference" in result
+    assert result["baseline_evaluated_reference"]["snapshot_id"] == 100
     assert result["differences"]["components"] == -1
     assert result["differences"]["dependencies"] == -1
     assert len(result["generated_evidence_ids"]) >= 1
@@ -297,3 +322,109 @@ async def test_unsupported_intervention_handling() -> None:
             experiment_id=20,
             run_id=1,
         )
+
+
+@pytest.mark.asyncio
+async def test_baseline_reproducibility_rejection_of_unresolved_reference() -> None:
+    """
+    Verify that requesting an unanalyzed commit/ref fails deterministically with
+    BaselineArchitectureNotFoundError rather than silently substituting latest.
+    """
+    service, _, mock_lab_repo, _, mock_repo_repo = _make_service()
+
+    mock_repo = MagicMock(spec=Repository, id=1, organization_id=10)
+    mock_repo_repo.get_by_id.return_value = mock_repo
+
+    # Experiment with unanalyzed git commit
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=20,
+        hypothesis_id=5,
+        baseline_reference={"commit": "HEAD~1"},
+        proposed_reference={"intervention_type": "REMOVE", "target_component_ids": ["auth.py"]},
+    )
+    mock_lab_repo.get_experiment_by_id.return_value = mock_exp
+    mock_lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=5)
+
+    mock_run = MagicMock(spec=ExperimentRun, id=1, experiment_id=20, status=ExperimentRunStatus.PENDING.value)
+    mock_lab_repo.get_experiment_run_by_id.return_value = mock_run
+
+    with pytest.raises(BaselineArchitectureNotFoundError) as exc_info:
+        await service.execute_run(
+            organization_id=10,
+            repository_id=1,
+            experiment_id=20,
+            run_id=1,
+        )
+
+    assert "HEAD~1" in str(exc_info.value)
+    assert "has not been analyzed" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_baseline_reproducibility_nonexistent_snapshot_id() -> None:
+    """Verify that a nonexistent snapshot_id fails deterministically."""
+    service, _, mock_lab_repo, mock_arch_repo, mock_repo_repo = _make_service()
+
+    mock_repo = MagicMock(spec=Repository, id=1, organization_id=10)
+    mock_repo_repo.get_by_id.return_value = mock_repo
+
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=20,
+        hypothesis_id=5,
+        baseline_reference={"snapshot_id": 99999},
+        proposed_reference={"intervention_type": "REMOVE", "target_component_ids": ["auth.py"]},
+    )
+    mock_lab_repo.get_experiment_by_id.return_value = mock_exp
+    mock_lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=5)
+    mock_arch_repo.get_by_id.return_value = None
+
+    mock_run = MagicMock(spec=ExperimentRun, id=1, experiment_id=20, status=ExperimentRunStatus.PENDING.value)
+    mock_lab_repo.get_experiment_run_by_id.return_value = mock_run
+
+    with pytest.raises(BaselineArchitectureNotFoundError) as exc_info:
+        await service.execute_run(
+            organization_id=10,
+            repository_id=1,
+            experiment_id=20,
+            run_id=1,
+        )
+
+    assert "99999" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_proposed_reference_unanalyzed_branch_rejection() -> None:
+    """
+    Verify that providing an ambiguous branch/commit in proposed_reference without an intervention
+    fails with UnsupportedInterventionError rather than silently guessing REMOVE.
+    """
+    service, _, mock_lab_repo, mock_arch_repo, mock_repo_repo = _make_service()
+
+    mock_repo = MagicMock(spec=Repository, id=1, organization_id=10)
+    mock_repo_repo.get_by_id.return_value = mock_repo
+
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=20,
+        hypothesis_id=5,
+        baseline_reference={"snapshot_id": 100},
+        proposed_reference={"branch": "refactor/payment-port"},
+    )
+    mock_lab_repo.get_experiment_by_id.return_value = mock_exp
+    mock_lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=5)
+    mock_arch_repo.get_by_id.return_value = MagicMock(spec=ArchitectureSnapshotModel, id=100, repository_id=1)
+
+    mock_run = MagicMock(spec=ExperimentRun, id=1, experiment_id=20, status=ExperimentRunStatus.PENDING.value)
+    mock_lab_repo.get_experiment_run_by_id.return_value = mock_run
+
+    with pytest.raises(UnsupportedInterventionError) as exc_info:
+        await service.execute_run(
+            organization_id=10,
+            repository_id=1,
+            experiment_id=20,
+            run_id=1,
+        )
+
+    assert "refactor/payment-port" in str(exc_info.value)

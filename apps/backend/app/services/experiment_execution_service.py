@@ -333,26 +333,20 @@ class ExperimentExecutionService:
                 consequences=consequences,
             )
 
-            # 5. Persist Traceable Evidence in Evidence Ledger
-            evidence_ids = await self._persist_evidence_items(
-                organization_id=organization_id,
-                repository_id=repository_id,
-                hypothesis_id=hypothesis.id,
-                experiment_id=experiment.id,
-                run_id=run.id,
-                baseline_snapshot_id=baseline_snapshot.id,
-                consequences=consequences,
-                differences=differences,
-            )
-
-            # 6. Freeze Frozen References & Persist Structured Results
+            # Freeze Frozen References for deterministic evaluation provenance
             end_time = datetime.now(timezone.utc)
             duration = (end_time - start_time).total_seconds()
 
             frozen_baseline_ref = {
                 "snapshot_id": baseline_snapshot.id,
                 "analysis_result_id": baseline_snapshot.analysis_result_id,
-                "version": baseline_snapshot.snapshot_version,
+                "snapshot_version": baseline_snapshot.snapshot_version,
+                "requested_reference": experiment.baseline_reference,
+                "resolution_method": (
+                    "exact_snapshot_id"
+                    if experiment.baseline_reference.get("snapshot_id") is not None
+                    else "explicit_latest_repository_snapshot"
+                ),
                 "resolved_at": start_time.isoformat(),
             }
             frozen_proposed_ref = {
@@ -360,11 +354,36 @@ class ExperimentExecutionService:
                 "intervention_type": intervention_type,
                 "target_component_ids": target_components,
                 "parameters": parameters,
+                "requested_reference": experiment.proposed_reference,
+                "resolution_method": (
+                    "hypothesis_intervention"
+                    if intervention
+                    else "explicit_structural_intervention"
+                ),
+                "resolved_at": start_time.isoformat(),
             }
 
+            # 5. Persist Traceable Evidence in Evidence Ledger with Full Provenance
+            evidence_ids = await self._persist_evidence_items(
+                organization_id=organization_id,
+                repository_id=repository_id,
+                hypothesis_id=hypothesis.id,
+                experiment_id=experiment.id,
+                run_id=run.id,
+                baseline_snapshot_id=baseline_snapshot.id,
+                frozen_baseline_ref=frozen_baseline_ref,
+                frozen_proposed_ref=frozen_proposed_ref,
+                consequences=consequences,
+                differences=differences,
+                start_time=start_time,
+            )
+
             result_data: dict[str, Any] = {
+                "baseline_evaluated_reference": frozen_baseline_ref,
+                "proposed_evaluated_reference": frozen_proposed_ref,
                 "baseline_reference": frozen_baseline_ref,
                 "proposed_reference": frozen_proposed_ref,
+                "metric_delta_convention": "delta = proposed - baseline",
                 "metrics_before": metrics_before,
                 "metrics_after": metrics_after,
                 "differences": differences,
@@ -380,6 +399,11 @@ class ExperimentExecutionService:
                     "untrusted_code_executed": False,
                     "target_component_id": primary_target,
                     "duration_seconds": round(duration, 3),
+                    "evidence_category": EvidenceCategory.STATIC.value,
+                    "evidence_category_rationale": (
+                        "Evaluated purely from static AST code structures and graph topology; "
+                        "contains zero runtime benchmark or telemetry data."
+                    ),
                 },
                 "duration_seconds": round(duration, 3),
             }
@@ -435,23 +459,60 @@ class ExperimentExecutionService:
         repository_id: int,
         baseline_ref: dict[str, Any],
     ) -> ArchitectureSnapshotModel:
-        """Resolve immutable baseline architecture snapshot."""
+        """
+        Resolve immutable baseline architecture snapshot.
+
+        Enforces deterministic reproducibility:
+        - If a specific snapshot_id is requested, it must exist and belong to this repository.
+        - If a commit/commit_sha or branch is requested, it must resolve to an analyzed snapshot.
+          Never silently substitute 'latest' when a specific commit/ref was requested.
+        - If explicitly requested as 'latest' (or empty {} without specific ref), resolve the latest
+          analyzed snapshot.
+        - Fails deterministically with BaselineArchitectureNotFoundError if the reference cannot be resolved.
+        """
+        if not baseline_ref:
+            # Explicit default when no specific reference provided
+            snapshot = await self.arch_repo.get_latest_by_repository(repository_id)
+            if snapshot is not None:
+                return snapshot
+            raise BaselineArchitectureNotFoundError(
+                f"No architecture snapshot exists for repository {repository_id}. Run repository analysis first."
+            )
+
         snapshot_id = baseline_ref.get("snapshot_id")
         if snapshot_id is not None:
             snapshot = await self.arch_repo.get_by_id(snapshot_id)
             if snapshot is not None and snapshot.repository_id == repository_id:
                 return snapshot
             raise BaselineArchitectureNotFoundError(
-                f"Specified baseline architecture snapshot {snapshot_id} not found for repository."
+                f"Requested baseline architecture snapshot {snapshot_id} does not exist for repository {repository_id}."
             )
 
-        # Fallback to latest completed architecture snapshot for repository
-        snapshot = await self.arch_repo.get_latest_by_repository(repository_id)
-        if snapshot is not None:
-            return snapshot
+        # If user explicitly requested latest
+        if baseline_ref.get("type") == "latest" or baseline_ref.get("use_latest") is True:
+            snapshot = await self.arch_repo.get_latest_by_repository(repository_id)
+            if snapshot is not None:
+                return snapshot
+            raise BaselineArchitectureNotFoundError(
+                f"No architecture snapshot exists for repository {repository_id}. Run repository analysis first."
+            )
+
+        # If a specific commit, commit_sha, branch, or ref was requested:
+        # We must NOT silently substitute 'latest'. Deterministic failure over silent substitution.
+        commit_ref = (
+            baseline_ref.get("commit")
+            or baseline_ref.get("commit_sha")
+            or baseline_ref.get("branch")
+            or baseline_ref.get("ref")
+        )
+        if commit_ref is not None:
+            raise BaselineArchitectureNotFoundError(
+                f"Requested baseline reference '{commit_ref}' has not been analyzed into an architecture snapshot "
+                f"for repository {repository_id}. Run analysis for this reference first or specify an analyzed snapshot_id."
+            )
 
         raise BaselineArchitectureNotFoundError(
-            "No architecture snapshot exists for repository. Run repository analysis first."
+            f"Unrecognized baseline reference format: {baseline_ref}. Provide 'snapshot_id' or '{{ \"type\": \"latest\" }}'."
         )
 
     async def _resolve_proposed_intervention(
@@ -460,7 +521,21 @@ class ExperimentExecutionService:
         hypothesis_id: int,
         proposed_ref: dict[str, Any],
     ) -> tuple[Intervention | None, str, list[str], dict[str, Any]]:
-        """Resolve intervention details from proposed reference."""
+        """
+        Resolve intervention details from proposed reference.
+
+        Enforces deterministic reproducibility:
+        - If intervention_id is specified, it must exist and belong to the hypothesis.
+        - If explicit structural intervention is specified (intervention_type + target_component_ids),
+          it must use a recognized InterventionType.
+        - If an unanalyzed git branch/commit was provided without an intervention, fails with
+          UnsupportedInterventionError rather than silently defaulting to 'REMOVE'.
+        """
+        if not proposed_ref:
+            raise UnsupportedInterventionError(
+                "Proposed reference cannot be empty. Specify an intervention_id or an explicit structural intervention."
+            )
+
         intervention_id = proposed_ref.get("intervention_id")
         intervention: Intervention | None = None
 
@@ -468,15 +543,21 @@ class ExperimentExecutionService:
             intervention = await self.lab_repo.get_intervention_by_id(intervention_id)
             if intervention is None or intervention.hypothesis_id != hypothesis_id:
                 raise UnsupportedInterventionError(
-                    f"Specified intervention {intervention_id} not found for hypothesis."
+                    f"Specified intervention {intervention_id} not found for hypothesis {hypothesis_id}."
                 )
             intervention_type = intervention.intervention_type
             target_components = list(intervention.target_component_ids)
             parameters = dict(intervention.parameters)
-        else:
-            intervention_type = proposed_ref.get("intervention_type", proposed_ref.get("type", "REMOVE"))
+        elif "intervention_type" in proposed_ref or "type" in proposed_ref:
+            intervention_type = proposed_ref.get("intervention_type", proposed_ref.get("type"))
             target_components = proposed_ref.get("target_component_ids", proposed_ref.get("target_components", []))
             parameters = proposed_ref.get("parameters", {})
+        else:
+            raise UnsupportedInterventionError(
+                f"Proposed reference '{proposed_ref}' does not specify an intervention_id or explicit intervention_type. "
+                f"The deterministic structural simulation engine evaluates modeled interventions on the baseline AST topology. "
+                f"Specify an intervention_id or an explicit intervention_type with target_component_ids."
+            )
 
         # Validate intervention type
         valid_types = {t.value for t in InterventionType}
@@ -541,6 +622,8 @@ class ExperimentExecutionService:
         """
         Compute quantitative before, after, and delta metrics deterministically.
         Strictly numerical differences without unsupported performance inferences.
+
+        Delta convention: delta = proposed - baseline.
         """
         # Baseline counts
         baseline_components = baseline_graph.node_count
@@ -626,13 +709,50 @@ class ExperimentExecutionService:
         experiment_id: int,
         run_id: int,
         baseline_snapshot_id: int,
+        frozen_baseline_ref: dict[str, Any],
+        frozen_proposed_ref: dict[str, Any],
         consequences: StructuralConsequenceSet,
         differences: dict[str, Any],
+        start_time: datetime,
     ) -> list[int]:
         """
         Record traceable EvidenceItem entries in lab_evidence_ledger preserving STATIC provenance.
+
+        Answers all 8 provenance questions:
+        1. Which experiment? -> experiment_id (FK & provenance)
+        2. Which experiment run? -> run_id (FK & provenance)
+        3. Which baseline reference? -> frozen_baseline_ref
+        4. Which proposed reference? -> frozen_proposed_ref
+        5. Which architecture/analyzer version? -> "DeterministicSimulationEngine v1.0"
+        6. When was the evaluation performed? -> start_time
+        7. Which structural metrics were compared? -> ["components", "dependencies", "efferent_coupling", "instability", "boundary_crossings"]
+        8. What type of evidence is this? -> category=STATIC, source_type="STRUCTURAL_ANALYSIS"
         """
         created_ids: list[int] = []
+
+        shared_provenance = {
+            "experiment_id": experiment_id,
+            "run_id": run_id,
+            "baseline_reference": frozen_baseline_ref,
+            "proposed_reference": frozen_proposed_ref,
+            "analyzer_version": "DeterministicSimulationEngine v1.0",
+            "evaluation_timestamp": start_time.isoformat(),
+            "compared_metrics": [
+                "components",
+                "dependencies",
+                "efferent_coupling",
+                "instability",
+                "boundary_crossings",
+            ],
+            "metric_delta_convention": "delta = proposed - baseline",
+            "evidence_type": "deterministic_structural_simulation",
+            "evidence_category_justification": (
+                "STATIC category: derived entirely from static AST code structure and dependency graph topology. "
+                "Contains no runtime telemetry, synthetic benchmark, or cloud billing measurements."
+            ),
+            "confidence_type": "deterministic_structural_soundness",
+            "confidence_rationale": "Exact in-memory AST symbol graph traversal; not a statistical probability",
+        }
 
         # Evidence 1: Primary structural impact claim
         primary_evidence = EvidenceItem(
@@ -657,12 +777,7 @@ class ExperimentExecutionService:
                 "boundaries_crossed_count": consequences.boundaries_crossed_count,
             },
             confidence=1.0 if consequences.confidence.structural_confidence == ConfidenceLevel.HIGH else 0.8,
-            provenance={
-                "run_id": run_id,
-                "baseline_snapshot_id": baseline_snapshot_id,
-                "engine": "DeterministicSimulationEngine v1.0",
-                "evidence_strength": "deterministic",
-            },
+            provenance=shared_provenance,
         )
         saved_primary = await self.lab_repo.create_evidence_item(primary_evidence)
         created_ids.append(saved_primary.id)
@@ -689,12 +804,7 @@ class ExperimentExecutionService:
                 "delta": differences.get("instability", 0.0),
             },
             confidence=1.0,
-            provenance={
-                "run_id": run_id,
-                "baseline_snapshot_id": baseline_snapshot_id,
-                "engine": "DeterministicSimulationEngine v1.0",
-                "evidence_strength": "deterministic",
-            },
+            provenance=shared_provenance,
         )
         saved_coupling = await self.lab_repo.create_evidence_item(coupling_evidence)
         created_ids.append(saved_coupling.id)
