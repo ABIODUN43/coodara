@@ -207,3 +207,83 @@ async def test_validation_error_returns_400(mock_user, mock_member):
         app.dependency_overrides.pop(get_current_active_user, None)
         app.dependency_overrides.pop(get_current_organization_member, None)
         app.dependency_overrides.pop(_get_lab_service, None)
+
+
+@pytest.mark.asyncio
+async def test_execute_experiment_run_endpoint(mock_user, mock_member):
+    app.dependency_overrides[get_current_active_user] = lambda: mock_user
+    app.dependency_overrides[get_current_organization_member] = lambda: mock_member
+
+    mock_service = AsyncMock(spec=LabService)
+    mock_run = MagicMock()
+    mock_run.id = 1
+    mock_run.experiment_id = 20
+    mock_run.run_number = 1
+    mock_run.status = ExperimentRunStatus.COMPLETED.value
+    mock_run.started_at = "2026-10-03T16:00:00Z"
+    mock_run.completed_at = "2026-10-03T16:00:02Z"
+    mock_run.error = None
+    mock_run.result_data = {
+        "differences": {"components": -1, "dependencies": -2},
+        "metrics_before": {"components": 10},
+        "metrics_after": {"components": 9},
+    }
+    mock_run.created_at = "2026-10-03T16:00:00Z"
+
+    mock_service.execute_experiment_run.return_value = mock_run
+    app.dependency_overrides[_get_lab_service] = lambda: mock_service
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/organizations/1/repositories/10/lab/experiments/20/runs/1/execute",
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == 1
+            assert data["status"] == "COMPLETED"
+            assert data["result_data"]["differences"]["components"] == -1
+    finally:
+        app.dependency_overrides.pop(get_current_active_user, None)
+        app.dependency_overrides.pop(get_current_organization_member, None)
+        app.dependency_overrides.pop(_get_lab_service, None)
+
+
+@pytest.mark.asyncio
+async def test_cancel_experiment_run_endpoint(mock_user, mock_member):
+    app.dependency_overrides[get_current_active_user] = lambda: mock_user
+    app.dependency_overrides[get_current_organization_member] = lambda: mock_member
+
+    mock_service = AsyncMock(spec=LabService)
+    mock_run = MagicMock()
+    mock_run.id = 1
+    mock_run.experiment_id = 20
+    mock_run.run_number = 1
+    mock_run.status = ExperimentRunStatus.CANCELLED.value
+    mock_run.started_at = "2026-10-03T16:00:00Z"
+    mock_run.completed_at = "2026-10-03T16:00:01Z"
+    mock_run.error = "Run cancelled by user."
+    mock_run.result_data = {}
+    mock_run.created_at = "2026-10-03T16:00:00Z"
+
+    mock_service.cancel_experiment_run.return_value = mock_run
+    app.dependency_overrides[_get_lab_service] = lambda: mock_service
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/organizations/1/repositories/10/lab/experiments/20/runs/1/cancel",
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == 1
+            assert data["status"] == "CANCELLED"
+            assert "cancelled" in data["error"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_active_user, None)
+        app.dependency_overrides.pop(get_current_organization_member, None)
+        app.dependency_overrides.pop(_get_lab_service, None)

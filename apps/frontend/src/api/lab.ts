@@ -188,6 +188,56 @@ export async function createExperimentRun(
   return data;
 }
 
+export async function listExperimentRuns(
+  orgId: string | number,
+  repoId: string | number,
+  experimentId: number | string
+): Promise<ExperimentRun[]> {
+  const { data } = await api.get<ExperimentRun[]>(
+    `${getLabBaseUrl(orgId, repoId)}/experiments/${experimentId}/runs`
+  );
+  return data;
+}
+
+export async function getExperimentRun(
+  orgId: string | number,
+  repoId: string | number,
+  experimentId: number | string,
+  runId: number | string
+): Promise<ExperimentRun> {
+  const { data } = await api.get<ExperimentRun>(
+    `${getLabBaseUrl(orgId, repoId)}/experiments/${experimentId}/runs/${runId}`
+  );
+  return data;
+}
+
+export async function executeExperimentRun(
+  orgId: string | number,
+  repoId: string | number,
+  experimentId: number | string,
+  runId: number | string,
+  runInBackground = false
+): Promise<ExperimentRun> {
+  const { data } = await api.post<ExperimentRun>(
+    `${getLabBaseUrl(orgId, repoId)}/experiments/${experimentId}/runs/${runId}/execute`,
+    {},
+    { params: { run_in_background: runInBackground } }
+  );
+  return data;
+}
+
+export async function cancelExperimentRun(
+  orgId: string | number,
+  repoId: string | number,
+  experimentId: number | string,
+  runId: number | string
+): Promise<ExperimentRun> {
+  const { data } = await api.post<ExperimentRun>(
+    `${getLabBaseUrl(orgId, repoId)}/experiments/${experimentId}/runs/${runId}/cancel`
+  );
+  return data;
+}
+
 // =============================================================================
 // Workload & Resource Profiles
 // =============================================================================

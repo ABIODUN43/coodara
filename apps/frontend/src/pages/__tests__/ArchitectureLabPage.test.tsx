@@ -312,4 +312,81 @@ describe("ArchitectureLabPage", () => {
       ).toBeDefined();
     });
   });
+
+  it("navigates to Experiments tab, runs experiment and displays structural comparison results", async () => {
+    const completedRun = {
+      id: 1,
+      experiment_id: 201,
+      run_number: 1,
+      status: "COMPLETED" as const,
+      started_at: "2026-10-02T13:00:00Z",
+      completed_at: "2026-10-02T13:00:02Z",
+      created_at: "2026-10-02T13:00:00Z",
+      result_data: {
+        baseline_reference: { snapshot_id: 1 },
+        proposed_reference: { intervention_type: "REMOVE" },
+        metrics_before: { components: 10, dependencies: 25, efferent_coupling: 4, instability: 0.4 },
+        metrics_after: { components: 9, dependencies: 23, efferent_coupling: 3, instability: 0.3 },
+        differences: { components: -1, dependencies: -2, efferent_coupling: -1, instability: -0.1 },
+        direct_impacts: [
+          {
+            entity_id: "payment-client",
+            name: "Payment Client",
+            subsystem: "billing",
+            component_type: "module",
+            relationship: "direct_dependency",
+            reason: "Direct dependency broken",
+          },
+        ],
+        boundaries_crossed: [],
+        generated_evidence_ids: [1001],
+        duration_seconds: 0.24,
+      },
+    };
+
+    vi.spyOn(labApi, "createExperimentRun").mockResolvedValue({
+      id: 1,
+      experiment_id: 201,
+      run_number: 1,
+      status: "PENDING",
+      created_at: "2026-10-02T13:00:00Z",
+    });
+    vi.spyOn(labApi, "executeExperimentRun").mockImplementation(async () => {
+      // Mock refresh returning completed experiment
+      vi.spyOn(labApi, "listExperiments").mockResolvedValue([
+        {
+          ...sampleExperiment,
+          status: "COMPLETED",
+          runs: [completedRun],
+        },
+      ]);
+      return completedRun;
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/lab?repoId=10&tab=experiments"]}>
+        <Routes>
+          <Route path="/lab" element={<ArchitectureLabPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Adapter Decoupling Benchmark").length).toBeGreaterThan(0);
+    });
+
+    // Run Experiment button should be visible
+    const runBtn = screen.getByRole("button", { name: /Run Experiment/i });
+    expect(runBtn).toBeDefined();
+
+    fireEvent.click(runBtn);
+
+    // Verify comparison results render
+    await waitFor(() => {
+      expect(screen.getByText("Deterministic Structural Comparison")).toBeDefined();
+      expect(screen.getByText("Efferent Coupling (Ce)")).toBeDefined();
+      expect(screen.getByText("Directly Impacted Components (1)")).toBeDefined();
+      expect(screen.getByText("Record Decision")).toBeDefined();
+    });
+  });
 });

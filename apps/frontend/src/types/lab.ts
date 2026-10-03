@@ -112,6 +112,48 @@ export interface ExperimentRunCreateRequest {
   status?: ExperimentRunStatus;
 }
 
+export interface ExperimentResultData {
+  baseline_reference?: Record<string, unknown>;
+  proposed_reference?: Record<string, unknown>;
+  metrics_before?: Record<string, number | string>;
+  metrics_after?: Record<string, number | string>;
+  differences?: Record<string, number>;
+  direct_impacts?: Array<{
+    entity_id: string;
+    name: string;
+    subsystem: string;
+    component_type: string;
+    relationship: string;
+    reason: string;
+  }>;
+  indirect_impacts?: Array<{
+    entity_id: string;
+    name: string;
+    subsystem: string;
+    hops: number;
+    shortest_path: string[];
+    reason: string;
+  }>;
+  propagation_paths?: Array<{
+    target_id: string;
+    target_name: string;
+    hops: number;
+    path_nodes: string[];
+    relationship: string;
+  }>;
+  boundaries_crossed?: Array<{
+    boundary_id: string;
+    from_boundary: string;
+    to_boundary: string;
+    crossing_edge: string;
+    reason: string;
+    severity: string;
+  }>;
+  generated_evidence_ids?: number[];
+  execution_metadata?: Record<string, unknown>;
+  duration_seconds?: number;
+}
+
 export interface ExperimentRun {
   id: number;
   experiment_id: number;
@@ -120,6 +162,7 @@ export interface ExperimentRun {
   started_at?: string | null;
   completed_at?: string | null;
   error?: string | null;
+  result_data?: ExperimentResultData;
   created_at: string;
 }
 

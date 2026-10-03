@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  cancelExperimentRun,
   createDecisionRecord,
   createEvidenceItem,
   createExperiment,
+  createExperimentRun,
   createHypothesis,
   createIntervention,
   createResourceProfile,
   createWorkloadProfile,
   deleteHypothesis,
+  executeExperimentRun,
   getLabOverview,
   listDecisionRecords,
   listEvidence,
@@ -24,6 +27,7 @@ import type {
   EvidenceItemCreateRequest,
   Experiment,
   ExperimentCreateRequest,
+  ExperimentRun,
   Hypothesis,
   HypothesisCreateRequest,
   HypothesisUpdateRequest,
@@ -60,6 +64,8 @@ export interface UseArchitectureLabReturn {
   addResourceProfile: (payload: ResourceProfileCreateRequest) => Promise<ResourceProfile>;
   addEvidenceItem: (payload: EvidenceItemCreateRequest) => Promise<EvidenceItem>;
   addDecisionRecord: (payload: DecisionRecordCreateRequest) => Promise<DecisionRecord>;
+  executeExperiment: (experimentId: number, runId?: number) => Promise<ExperimentRun>;
+  cancelExperiment: (experimentId: number, runId: number) => Promise<ExperimentRun>;
 }
 
 export function useArchitectureLab(
@@ -294,6 +300,33 @@ export function useArchitectureLab(
     [orgId, repoId, overview]
   );
 
+  const executeExperiment = useCallback(
+    async (experimentId: number, runId?: number): Promise<ExperimentRun> => {
+      if (!orgId || !repoId) throw new Error("Missing organization or repository ID");
+      let targetRunId = runId;
+      if (!targetRunId) {
+        const newRun = await createExperimentRun(orgId, repoId, experimentId, {
+          run_number: 1,
+        });
+        targetRunId = newRun.id;
+      }
+      const completedRun = await executeExperimentRun(orgId, repoId, experimentId, targetRunId);
+      await refresh();
+      return completedRun;
+    },
+    [orgId, repoId, refresh]
+  );
+
+  const cancelExperiment = useCallback(
+    async (experimentId: number, runId: number): Promise<ExperimentRun> => {
+      if (!orgId || !repoId) throw new Error("Missing organization or repository ID");
+      const cancelledRun = await cancelExperimentRun(orgId, repoId, experimentId, runId);
+      await refresh();
+      return cancelledRun;
+    },
+    [orgId, repoId, refresh]
+  );
+
   return {
     loading,
     error,
@@ -318,5 +351,7 @@ export function useArchitectureLab(
     addResourceProfile,
     addEvidenceItem,
     addDecisionRecord,
+    executeExperiment,
+    cancelExperiment,
   };
 }

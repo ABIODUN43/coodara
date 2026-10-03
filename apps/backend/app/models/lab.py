@@ -92,6 +92,7 @@ class ExperimentRunStatus(StrEnum):
     """Execution status of an individual experiment run."""
 
     PENDING = "PENDING"
+    READY = "READY"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
@@ -442,6 +443,13 @@ class ExperimentRun(Base):
     error: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    result_data: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
     )
 
     created_at: Mapped[datetime] = mapped_column(

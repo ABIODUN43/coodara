@@ -75,6 +75,31 @@ def _handle_lab_error(exc: Exception) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
+    from app.services.experiment_execution_service import (
+        BaselineArchitectureNotFoundError,
+        DuplicateExecutionError,
+        ExperimentExecutionError,
+        ExperimentNotFoundError,
+        ExperimentRunNotFoundError,
+        InvalidStateTransitionError,
+        UnsupportedInterventionError,
+    )
+
+    if isinstance(exc, (ExperimentNotFoundError, ExperimentRunNotFoundError)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    if isinstance(exc, DuplicateExecutionError):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+    if isinstance(exc, (InvalidStateTransitionError, BaselineArchitectureNotFoundError, UnsupportedInterventionError, ExperimentExecutionError)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
     logger.exception("Unexpected error in Architecture Lab API: %s", exc)
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -415,6 +440,83 @@ async def list_experiment_runs(
             experiment_id=experiment_id,
         )
         return [ExperimentRunResponse.model_validate(r) for r in runs]
+    except Exception as exc:
+        _handle_lab_error(exc)
+
+
+@router.get(
+    "/experiments/{experiment_id}/runs/{run_id}",
+    response_model=ExperimentRunResponse,
+    summary="Get experiment run details",
+)
+async def get_experiment_run(
+    organization_id: int,
+    repository_id: int,
+    experiment_id: int,
+    run_id: int,
+    member: OrganizationMemberDependency,
+    service: LabService = Depends(_get_lab_service),
+) -> ExperimentRunResponse:
+    try:
+        run = await service.get_experiment_run(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            experiment_id=experiment_id,
+            run_id=run_id,
+        )
+        return ExperimentRunResponse.model_validate(run)
+    except Exception as exc:
+        _handle_lab_error(exc)
+
+
+@router.post(
+    "/experiments/{experiment_id}/runs/{run_id}/execute",
+    response_model=ExperimentRunResponse,
+    summary="Execute experiment run",
+)
+async def execute_experiment_run(
+    organization_id: int,
+    repository_id: int,
+    experiment_id: int,
+    run_id: int,
+    member: OrganizationMemberDependency,
+    run_in_background: bool = Query(False, description="Whether to enqueue execution in Celery worker"),
+    service: LabService = Depends(_get_lab_service),
+) -> ExperimentRunResponse:
+    try:
+        run = await service.execute_experiment_run(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            experiment_id=experiment_id,
+            run_id=run_id,
+            run_in_background=run_in_background,
+        )
+        return ExperimentRunResponse.model_validate(run)
+    except Exception as exc:
+        _handle_lab_error(exc)
+
+
+@router.post(
+    "/experiments/{experiment_id}/runs/{run_id}/cancel",
+    response_model=ExperimentRunResponse,
+    summary="Cancel experiment run",
+)
+async def cancel_experiment_run(
+    organization_id: int,
+    repository_id: int,
+    experiment_id: int,
+    run_id: int,
+    member: OrganizationMemberDependency,
+    service: LabService = Depends(_get_lab_service),
+) -> ExperimentRunResponse:
+    try:
+        run = await service.cancel_experiment_run(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            experiment_id=experiment_id,
+            run_id=run_id,
+        )
+        return ExperimentRunResponse.model_validate(run)
     except Exception as exc:
         _handle_lab_error(exc)
 

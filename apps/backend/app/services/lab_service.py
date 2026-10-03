@@ -351,11 +351,30 @@ class LabService:
             experiment_id=experiment_id,
             run_number=payload.run_number,
             status=payload.status.value,
+            result_data={},
         )
 
         created = await self.lab_repo.create_experiment_run(run)
         await self.db.commit()
         return created
+
+    async def get_experiment_run(
+        self,
+        *,
+        organization_id: int,
+        repository_id: int,
+        experiment_id: int,
+        run_id: int,
+    ) -> ExperimentRun:
+        await self.get_experiment(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            experiment_id=experiment_id,
+        )
+        run = await self.lab_repo.get_experiment_run_by_id(run_id)
+        if run is None or run.experiment_id != experiment_id:
+            raise LabResourceNotFoundError(f"Experiment run {run_id} not found.")
+        return run
 
     async def list_experiment_runs(
         self,
@@ -370,6 +389,69 @@ class LabService:
             experiment_id=experiment_id,
         )
         return await self.lab_repo.list_experiment_runs(experiment_id=experiment_id)
+
+    async def execute_experiment_run(
+        self,
+        *,
+        organization_id: int,
+        repository_id: int,
+        experiment_id: int,
+        run_id: int,
+        run_in_background: bool = False,
+    ) -> ExperimentRun:
+        await self.get_experiment(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            experiment_id=experiment_id,
+        )
+
+        from app.services.experiment_execution_service import ExperimentExecutionService
+
+        if run_in_background:
+            try:
+                from app.workers.lab_tasks import execute_experiment_task
+
+                execute_experiment_task.delay(
+                    organization_id=organization_id,
+                    repository_id=repository_id,
+                    experiment_id=experiment_id,
+                    run_id=run_id,
+                )
+                run = await self.lab_repo.get_experiment_run_by_id(run_id)
+                if run is not None:
+                    return run
+            except Exception as celery_exc:
+                logger.warning(
+                    "Celery dispatch failed for experiment run id=%d: %s. Falling back to inline execution.",
+                    run_id,
+                    celery_exc,
+                )
+
+        execution_service = ExperimentExecutionService(self.db)
+        return await execution_service.execute_run(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            experiment_id=experiment_id,
+            run_id=run_id,
+        )
+
+    async def cancel_experiment_run(
+        self,
+        *,
+        organization_id: int,
+        repository_id: int,
+        experiment_id: int,
+        run_id: int,
+    ) -> ExperimentRun:
+        from app.services.experiment_execution_service import ExperimentExecutionService
+
+        execution_service = ExperimentExecutionService(self.db)
+        return await execution_service.cancel_run(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            experiment_id=experiment_id,
+            run_id=run_id,
+        )
 
     # ==========================================================================
     # Workload Profiles

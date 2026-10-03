@@ -353,6 +353,9 @@ export function ArchitectureLabPage() {
                 selectedExperiment={lab.selectedExperiment}
                 onSelectExperiment={lab.selectExperiment}
                 onOpenNewExperiment={handleOpenNewExperiment}
+                onExecuteExperiment={lab.executeExperiment}
+                onCancelExperiment={lab.cancelExperiment}
+                onRecordDecision={(exp) => handleOpenRecordDecision(exp.hypothesis_id)}
               />
             )}
 

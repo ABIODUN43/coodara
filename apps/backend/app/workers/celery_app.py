@@ -20,6 +20,7 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "app.workers.analysis_tasks",
+        "app.workers.lab_tasks",
     ],
 )
 

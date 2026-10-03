@@ -1,10 +1,16 @@
 import { useState } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
   Clock,
   Layers,
+  Loader2,
+  Play,
   Plus,
+  ShieldAlert,
   Sparkles,
+  XCircle,
 } from "lucide-react";
 import type { Experiment, Hypothesis } from "@/types/lab";
 import { ExperimentStatusBadge } from "./LabBadges";
@@ -15,6 +21,9 @@ interface ExperimentWorkspaceProps {
   selectedExperiment: Experiment | null;
   onSelectExperiment: (e: Experiment) => void;
   onOpenNewExperiment: () => void;
+  onExecuteExperiment?: (experimentId: number, runId?: number) => Promise<unknown>;
+  onCancelExperiment?: (experimentId: number, runId: number) => Promise<unknown>;
+  onRecordDecision?: (experiment: Experiment) => void;
 }
 
 export function ExperimentWorkspace({
@@ -23,8 +32,13 @@ export function ExperimentWorkspace({
   selectedExperiment,
   onSelectExperiment,
   onOpenNewExperiment,
+  onExecuteExperiment,
+  onCancelExperiment,
+  onRecordDecision,
 }: ExperimentWorkspaceProps) {
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
+  const [isExecuting, setIsExecuting] = useState<boolean>(false);
+  const [executionError, setExecutionError] = useState<string | null>(null);
 
   const filteredExperiments = experiments.filter((exp) => {
     if (filterStatus !== "ALL" && exp.status !== filterStatus) return false;
@@ -33,6 +47,44 @@ export function ExperimentWorkspace({
 
   const activeExp = selectedExperiment || experiments[0] || null;
   const parentHypothesis = hypotheses.find((h) => activeExp && h.id === activeExp.hypothesis_id);
+  const latestRun = activeExp?.runs && activeExp.runs.length > 0
+    ? activeExp.runs[activeExp.runs.length - 1]
+    : null;
+
+  const resultData = latestRun?.result_data;
+  const metricsBefore = resultData?.metrics_before;
+  const metricsAfter = resultData?.metrics_after;
+  const diffs = resultData?.differences;
+  const isCompleted = activeExp?.status === "COMPLETED" && !!resultData;
+  const isRunning = activeExp?.status === "RUNNING" || isExecuting;
+  const isFailed = activeExp?.status === "FAILED";
+  const isCancelled = activeExp?.status === "CANCELLED";
+
+  const handleExecute = async () => {
+    if (!activeExp || !onExecuteExperiment) return;
+    setIsExecuting(true);
+    setExecutionError(null);
+    try {
+      await onExecuteExperiment(activeExp.id, latestRun?.id);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        "Execution failed";
+      setExecutionError(msg);
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!activeExp || !latestRun || !onCancelExperiment) return;
+    try {
+      await onCancelExperiment(activeExp.id, latestRun.id);
+    } catch (err: unknown) {
+      console.error("Cancel failed:", err);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -43,7 +95,7 @@ export function ExperimentWorkspace({
             Comparative Architecture Experiments
           </h2>
           <p className="text-xs text-[var(--cd-ink-soft)] mt-0.5">
-            Compare baseline system topologies against proposed refactorings.
+            Compare baseline system topologies against proposed structural interventions.
           </p>
         </div>
 
@@ -57,27 +109,12 @@ export function ExperimentWorkspace({
         </button>
       </div>
 
-      {/* Scope Boundary Notice */}
-      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-xs text-blue-900 dark:text-blue-200 flex items-start gap-3">
-        <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <span className="font-semibold text-blue-800 dark:text-blue-200">
-            Stage 3 Execution Boundary Discipline
-          </span>
-          <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80 leading-relaxed">
-            Experiments are currently configured in <span className="font-mono font-semibold">READY</span> status.
-            In Stage 4, Coodara will run sandbox benchmarks and compare measured latencies, memory footprint, and call traces.
-            No synthetic completed benchmark results are fabricated.
-          </p>
-        </div>
-      </div>
-
       {experiments.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[var(--cd-border)] bg-[var(--cd-surface)]/50 p-12 text-center">
           <Layers className="h-10 w-10 text-[var(--cd-accent)]/60 mx-auto mb-3" />
           <h3 className="text-sm font-semibold text-[var(--cd-ink)]">No Experiments Defined</h3>
           <p className="mt-1 text-xs text-[var(--cd-ink-soft)] max-w-sm mx-auto">
-            Create an experiment under an active hypothesis to specify a baseline and proposed variant comparison.
+            Create an experiment under an active hypothesis to evaluate baseline and proposed variant metrics.
           </p>
           <button
             type="button"
@@ -90,8 +127,8 @@ export function ExperimentWorkspace({
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Experiments List (5 Cols) */}
-          <div className="lg:col-span-5 space-y-3">
+          {/* Left Column: Experiments List (4 Cols) */}
+          <div className="lg:col-span-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
                 Configured Experiments ({filteredExperiments.length})
@@ -107,6 +144,7 @@ export function ExperimentWorkspace({
                 <option value="RUNNING">Running</option>
                 <option value="COMPLETED">Completed</option>
                 <option value="FAILED">Failed</option>
+                <option value="CANCELLED">Cancelled</option>
               </select>
             </div>
 
@@ -146,12 +184,12 @@ export function ExperimentWorkspace({
             </div>
           </div>
 
-          {/* Right Column: Experiment Inspection & Comparison (7 Cols) */}
-          <div className="lg:col-span-7">
+          {/* Right Column: Experiment Inspection, Execution & Comparison (8 Cols) */}
+          <div className="lg:col-span-8">
             {activeExp && (
               <div className="rounded-2xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-6 space-y-6 shadow-2xs">
-                {/* Header */}
-                <div className="flex items-start justify-between gap-4 border-b border-[var(--cd-border-soft)] pb-4">
+                {/* Header & Controls */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[var(--cd-border-soft)] pb-4">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[11px] text-[var(--cd-ink-faint)]">
@@ -171,22 +209,122 @@ export function ExperimentWorkspace({
                       </p>
                     )}
                   </div>
+
+                  {/* Execution Action Buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isRunning ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-xs font-semibold text-white opacity-80 cursor-wait"
+                        >
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Evaluating...</span>
+                        </button>
+                        {onCancelExperiment && latestRun && (
+                          <button
+                            type="button"
+                            onClick={handleCancel}
+                            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-500/20 transition-colors"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            <span>Cancel</span>
+                          </button>
+                        )}
+                      </>
+                    ) : isCompleted ? (
+                      <>
+                        {onExecuteExperiment && (
+                          <button
+                            type="button"
+                            onClick={handleExecute}
+                            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--cd-ink)] hover:bg-[var(--cd-bg)] transition-colors"
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                            <span>Re-run</span>
+                          </button>
+                        )}
+                        {onRecordDecision && (
+                          <button
+                            type="button"
+                            onClick={() => onRecordDecision(activeExp)}
+                            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors shadow-xs"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Record Decision</span>
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      onExecuteExperiment && (
+                        <button
+                          type="button"
+                          onClick={handleExecute}
+                          className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors shadow-xs"
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                          <span>Run Experiment</span>
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
 
-                {/* Explicit Comparison Card: Baseline vs Proposed */}
+                {/* Execution Error Banner if any */}
+                {(executionError || (isFailed && latestRun?.error)) && (
+                  <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-xs text-red-700 dark:text-red-300 flex items-start gap-2.5">
+                    <ShieldAlert className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold">Evaluation Error: </span>
+                      <span>{executionError || latestRun?.error || "Unknown execution error."}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Status Notice */}
+                {isRunning ? (
+                  <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
+                    <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
+                    <div>
+                      <span className="font-semibold">Evaluation in progress</span>
+                      <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                        Deterministic structural analysis is currently running in the isolated worker engine.
+                      </p>
+                    </div>
+                  </div>
+                ) : isCancelled ? (
+                  <div className="rounded-xl border border-neutral-500/20 bg-neutral-500/5 p-4 flex items-center gap-2.5 text-xs text-[var(--cd-ink-soft)]">
+                    <XCircle className="h-4 w-4 text-neutral-500" />
+                    <span>Evaluation cancelled by user. Click Re-run to evaluate again.</span>
+                  </div>
+                ) : !isCompleted ? (
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-1.5 text-xs text-amber-800 dark:text-amber-200">
+                    <div className="flex items-center gap-2 font-semibold text-amber-900 dark:text-amber-100">
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                      <span>Status: Not evaluated</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                      Click <span className="font-semibold">Run Experiment</span> above to evaluate structural consequences,
+                      coupling changes, and boundary crossings against the baseline architecture snapshot.
+                    </p>
+                  </div>
+                ) : null}
+
+                {/* References Card: Baseline vs Proposed */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
-                    Architectural Comparison
+                    Evaluation References
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Baseline */}
                     <div className="rounded-xl border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-4 space-y-2">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--cd-ink)]">
                         <Clock className="h-4 w-4 text-[var(--cd-ink-faint)]" />
-                        <span>Baseline Architecture</span>
+                        <span>Baseline Reference</span>
                       </div>
-                      <div className="font-mono text-xs text-[var(--cd-ink-soft)] bg-[var(--cd-surface)] p-2.5 rounded-lg border border-[var(--cd-border)]">
-                        {JSON.stringify(activeExp.baseline_reference, null, 2)}
+                      <div className="font-mono text-xs text-[var(--cd-ink-soft)] bg-[var(--cd-surface)] p-2.5 rounded-lg border border-[var(--cd-border)] break-all">
+                        {JSON.stringify(resultData?.baseline_reference || activeExp.baseline_reference, null, 2)}
                       </div>
                     </div>
 
@@ -194,26 +332,184 @@ export function ExperimentWorkspace({
                     <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-2">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
                         <Sparkles className="h-4 w-4 text-indigo-500" />
-                        <span>Proposed Variant</span>
+                        <span>Proposed Intervention</span>
                       </div>
-                      <div className="font-mono text-xs text-[var(--cd-ink)] bg-[var(--cd-surface)] p-2.5 rounded-lg border border-indigo-500/20">
-                        {JSON.stringify(activeExp.proposed_reference, null, 2)}
+                      <div className="font-mono text-xs text-[var(--cd-ink)] bg-[var(--cd-surface)] p-2.5 rounded-lg border border-indigo-500/20 break-all">
+                        {JSON.stringify(resultData?.proposed_reference || activeExp.proposed_reference, null, 2)}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Evaluation State Notice */}
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
-                    <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-                    <span>Evaluation Status: Pending Sandbox Runner</span>
+                {/* COMPLETED: Structured Results Comparison Table */}
+                {isCompleted && metricsBefore && metricsAfter && diffs && (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
+                        Deterministic Structural Comparison
+                      </span>
+                      <span className="text-[10px] text-[var(--cd-ink-faint)] font-mono">
+                        Duration: {resultData.duration_seconds ?? 0}s | Pure In-Memory Analysis
+                      </span>
+                    </div>
+
+                    <div className="rounded-xl border border-[var(--cd-border)] overflow-hidden">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-[var(--cd-border)] bg-[var(--cd-bg)] text-[var(--cd-ink-soft)]">
+                            <th className="py-2.5 px-4 font-semibold">Architectural Metric</th>
+                            <th className="py-2.5 px-4 font-semibold">Baseline</th>
+                            <th className="py-2.5 px-4 font-semibold">Proposed</th>
+                            <th className="py-2.5 px-4 font-semibold">Delta</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--cd-border-soft)] font-mono">
+                          <tr>
+                            <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Components</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.components ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.components ?? "—"}</td>
+                            <td className={`py-2.5 px-4 font-semibold ${
+                              (diffs.components || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : (diffs.components || 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--cd-ink-soft)]"
+                            }`}>
+                              {(diffs.components || 0) > 0 ? `+${diffs.components}` : (diffs.components ?? 0)}
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Dependencies</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.dependencies ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.dependencies ?? "—"}</td>
+                            <td className={`py-2.5 px-4 font-semibold ${
+                              (diffs.dependencies || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : (diffs.dependencies || 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--cd-ink-soft)]"
+                            }`}>
+                              {(diffs.dependencies || 0) > 0 ? `+${diffs.dependencies}` : (diffs.dependencies ?? 0)}
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Efferent Coupling (Ce)</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.efferent_coupling ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.efferent_coupling ?? "—"}</td>
+                            <td className={`py-2.5 px-4 font-semibold ${
+                              (diffs.efferent_coupling || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : (diffs.efferent_coupling || 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--cd-ink-soft)]"
+                            }`}>
+                              {(diffs.efferent_coupling || 0) > 0 ? `+${diffs.efferent_coupling}` : (diffs.efferent_coupling ?? 0)}
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Instability Index (I)</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.instability ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.instability ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink-soft)] font-semibold">
+                              {(diffs.instability || 0) > 0 ? `+${diffs.instability}` : (diffs.instability ?? 0)}
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Boundary Violations / Crossings</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.boundary_crossings ?? 0}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.boundary_crossings ?? 0}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink-soft)] font-semibold">
+                              {(diffs.boundary_crossings || 0) > 0 ? `+${diffs.boundary_crossings}` : (diffs.boundary_crossings ?? 0)}
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Architecture Issues Detected</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.issues_count ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.issues_count ?? "—"}</td>
+                            <td className={`py-2.5 px-4 font-semibold ${
+                              (diffs.issues_count || 0) < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-[var(--cd-ink-soft)]"
+                            }`}>
+                              {(diffs.issues_count || 0) > 0 ? `+${diffs.issues_count}` : (diffs.issues_count ?? 0)}
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Maintainability Score</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsBefore.maintainability ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink)]">{metricsAfter.maintainability ?? "—"}</td>
+                            <td className="py-2.5 px-4 text-[var(--cd-ink-soft)] font-semibold">
+                              {(diffs.maintainability || 0) > 0 ? `+${diffs.maintainability}` : (diffs.maintainability ?? 0)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Direct Impacts Card */}
+                    {resultData.direct_impacts && resultData.direct_impacts.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
+                          Directly Impacted Components ({resultData.direct_impacts.length})
+                        </span>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {resultData.direct_impacts.map((d, idx) => (
+                            <div
+                              key={idx}
+                              className="rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-3 text-xs flex items-start justify-between gap-3"
+                            >
+                              <div>
+                                <span className="font-semibold text-[var(--cd-ink)] font-mono">{d.name}</span>
+                                <span className="text-[10px] text-[var(--cd-ink-faint)] ml-2">({d.subsystem})</span>
+                                <p className="text-[11px] text-[var(--cd-ink-soft)] mt-0.5">{d.reason}</p>
+                              </div>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 shrink-0">
+                                {d.relationship}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Boundary Crossings Card */}
+                    {resultData.boundaries_crossed && resultData.boundaries_crossed.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
+                          Boundary Crossings Detected ({resultData.boundaries_crossed.length})
+                        </span>
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {resultData.boundaries_crossed.map((b, idx) => (
+                            <div
+                              key={idx}
+                              className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs flex items-center justify-between gap-2"
+                            >
+                              <div className="flex items-center gap-2 font-mono text-[11px]">
+                                <span className="text-[var(--cd-ink)]">{b.from_boundary}</span>
+                                <ArrowRight className="h-3 w-3 text-amber-500" />
+                                <span className="text-[var(--cd-ink)]">{b.to_boundary}</span>
+                                <span className="text-[10px] text-[var(--cd-ink-faint)] font-sans">({b.reason})</span>
+                              </div>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] uppercase font-mono font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                                {b.severity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Traceable Evidence Notice */}
+                    <div className="rounded-xl border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-4 flex items-center justify-between text-xs">
+                      <div className="space-y-0.5">
+                        <span className="font-semibold text-[var(--cd-ink)]">Traceable Evidence Recorded</span>
+                        <p className="text-[11px] text-[var(--cd-ink-soft)]">
+                          {resultData.generated_evidence_ids?.length || 0} evidence ledger entries generated with <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">STATIC</span> provenance.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono text-[var(--cd-ink-faint)] bg-[var(--cd-surface)] px-2 py-1 rounded border border-[var(--cd-border)]">
+                        AST_GRAPH_EVALUATION
+                      </span>
+                    </div>
+
+                    {/* Honest Epistemic Notice */}
+                    <div className="text-[11px] text-[var(--cd-ink-faint)] italic leading-relaxed pt-2 border-t border-[var(--cd-border-soft)]">
+                      * Structural metrics are deterministically derived from AST graph dependencies. No runtime latency, throughput, or cloud cost changes are inferred without measured production telemetry.
+                    </div>
                   </div>
-                  <p className="text-xs text-amber-800/90 dark:text-amber-200/90 leading-relaxed">
-                    This experiment is configured and verified in Coodara. Once the Stage 4 benchmark execution engine runs,
-                    empirical throughput, latency percentiles, and dependency diffs will be populated into the evidence ledger.
-                  </p>
-                </div>
+                )}
               </div>
             )}
           </div>
