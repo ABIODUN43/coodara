@@ -1,4 +1,4 @@
-import { API_BASE_URL, api } from "./client";
+import { API_BASE_URL, api, setAuthToken } from "./client";
 
 import type {
   GithubUser,
@@ -17,8 +17,8 @@ export function loginWithGithub(): void {
 /**
  * Retrieve the currently authenticated user.
  *
- * Authentication is provided automatically through
- * HttpOnly authentication cookies.
+ * Authentication is provided through HttpOnly cookies with
+ * Authorization Bearer header fallback.
  */
 export async function getCurrentUser(): Promise<GithubUser> {
   const { data } = await api.get<{ user: GithubUser }>("/auth/me");
@@ -30,10 +30,13 @@ export async function getCurrentUser(): Promise<GithubUser> {
  * Rotate the current refresh session.
  *
  * The refresh token is stored in an HttpOnly cookie.
- * JavaScript never receives or sends the refresh token.
  */
 export async function refreshAccessToken(): Promise<RefreshResponse> {
   const { data } = await api.post<RefreshResponse>("/auth/refresh");
+
+  if (data?.access_token) {
+    setAuthToken(data.access_token);
+  }
 
   return data;
 }
@@ -41,17 +44,27 @@ export async function refreshAccessToken(): Promise<RefreshResponse> {
 /**
  * Logout the current user.
  *
- * The backend reads and revokes the refresh session
- * from the HttpOnly cookie.
+ * Clears both the server-side refresh session and the client token.
  */
 export async function logout(): Promise<void> {
-  await api.post("/auth/logout");
+  try {
+    await api.post("/auth/logout");
+  } finally {
+    setAuthToken(null);
+  }
 }
 
 /**
  * Perform instant demo login without external OAuth.
  */
 export async function demoLogin(): Promise<GithubUser> {
-  const { data } = await api.post<{ user: GithubUser }>("/auth/demo-login");
+  const { data } = await api.post<{ user: GithubUser; access_token?: string }>(
+    "/auth/demo-login",
+  );
+
+  if (data.access_token) {
+    setAuthToken(data.access_token);
+  }
+
   return data.user;
-}
+}

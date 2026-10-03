@@ -78,7 +78,7 @@ class Settings(BaseSettings):
 
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
-    GITHUB_CALLBACK_URL: str = "http://localhost:5173/auth/callback"
+    GITHUB_CALLBACK_URL: str = "http://localhost:8000/api/v1/auth/callback"
 
     # --------------------------------------------------------
     # Frontend

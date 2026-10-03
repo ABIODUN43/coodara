@@ -300,8 +300,12 @@ async def github_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
+    frontend_callback = (
+        f"{settings.FRONTEND_URL}/auth/callback#token={quote_plus(tokens['access_token'])}"
+    )
+
     response = RedirectResponse(
-        url=f"{settings.FRONTEND_URL}/auth/callback",
+        url=frontend_callback,
         status_code=status.HTTP_302_FOUND,
     )
 
@@ -429,6 +433,7 @@ async def demo_login(
 
     return AuthenticatedUserResponse(
         user=user,
+        access_token=tokens["access_token"],
     )
 
 

@@ -18,6 +18,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     pool: "forks",
+    forks: {
+      singleFork: true,
+    },
     fileParallelism: false,
     maxWorkers: 1,
   },

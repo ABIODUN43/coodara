@@ -34,10 +34,11 @@ class UserResponse(BaseModel):
 
 class AuthenticatedUserResponse(BaseModel):
     """
-    Response returned by GET /auth/me.
+    Response returned by GET /auth/me and demo login.
     """
 
     user: UserResponse
+    access_token: str | None = None
 
 
 class RefreshResponse(BaseModel):

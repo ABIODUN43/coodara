@@ -3,7 +3,8 @@ import type {
   InternalAxiosRequestConfig,
 } from "axios";
 
-import { api } from "./client";
+import { api, getAuthToken, setAuthToken } from "./client";
+import type { RefreshResponse } from "@/types/auth";
 
 interface RetryableRequestConfig
   extends InternalAxiosRequestConfig {
@@ -13,20 +14,19 @@ interface RetryableRequestConfig
 let isRefreshing = false;
 
 let refreshQueue: Array<{
-  resolve: () => void;
+  resolve: (token?: string) => void;
   reject: (error: unknown) => void;
 }> = [];
 
-function processRefreshQueue(error?: unknown): void {
+function processRefreshQueue(error?: unknown, token?: string): void {
   const queue = refreshQueue;
-
   refreshQueue = [];
 
   for (const { resolve, reject } of queue) {
     if (error) {
       reject(error);
     } else {
-      resolve();
+      resolve(token);
     }
   }
 }
@@ -65,7 +65,11 @@ api.interceptors.response.use(
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         refreshQueue.push({
-          resolve: () => {
+          resolve: (newToken?: string) => {
+            const tokenToApply = newToken || getAuthToken();
+            if (tokenToApply) {
+              originalRequest.headers.Authorization = `Bearer ${tokenToApply}`;
+            }
             resolve(api(originalRequest));
           },
           reject,
@@ -76,12 +80,19 @@ api.interceptors.response.use(
     isRefreshing = true;
 
     try {
-      await api.post("/auth/refresh");
+      const { data } = await api.post<RefreshResponse>("/auth/refresh");
+      const newAccessToken = data?.access_token;
 
-      processRefreshQueue();
+      if (newAccessToken) {
+        setAuthToken(newAccessToken);
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+      }
+
+      processRefreshQueue(undefined, newAccessToken);
 
       return api(originalRequest);
     } catch (refreshError) {
+      setAuthToken(null);
       processRefreshQueue(refreshError);
 
       return Promise.reject(refreshError);

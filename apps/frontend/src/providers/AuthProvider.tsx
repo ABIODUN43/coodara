@@ -30,12 +30,25 @@ export function AuthProvider({
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async (): Promise<void> => {
-    const currentUser = await getCurrentUser();
-    setUser(currentUser);
+    setLoading(true);
+    try {
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+    } catch (error) {
+      setUser(null);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     let mounted = true;
+
+    // When landing on /auth/callback, AuthCallbackPage extracts tokens and invokes refreshUser directly.
+    if (typeof window !== "undefined" && window.location.pathname === "/auth/callback") {
+      return;
+    }
 
     async function restoreAuthentication(): Promise<void> {
       try {

@@ -61,7 +61,14 @@ async def get_current_user(
     7. User exists in the database.
     """
 
-    token = request.cookies.get(ACCESS_TOKEN_COOKIE)
+    auth_header = request.headers.get("Authorization") or request.headers.get("authorization")
+    token: str | None = None
+
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+
+    if not token:
+        token = request.cookies.get(ACCESS_TOKEN_COOKIE)
 
     if not token:
         raise HTTPException(
