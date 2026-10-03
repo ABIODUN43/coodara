@@ -35,31 +35,55 @@ Coodara's Architectural Economics layer provides transparent, deterministic cost
   - Numeric or string formats (e.g. `2`, `2 vCPU`, `2000m`, `4Gi`, `4096Mi`, `4GB`) must represent positive values.
   - Missing (`None`), empty, or non-positive values raise `EconomicInputValidationError`. Silent substitution of default sizes is prohibited.
 - **Storage GB:**
-  - Evaluated if `storage_gb > 0` and `storage_gb_month` exists in the rate card. If rate is missing, persistent storage is marked as not modeled in the formulas.
+  - If `resource.storage_gb is None`, persistent storage is marked as **`storage_modeled = False`** with reason `"Persistent storage capacity not specified in ResourceProfile"`.
+  - If `resource.storage_gb == 0.0`, storage is modeled as `$0.00` (`storage_modeled = True`, truly stateless).
+  - If `storage_gb > 0`: evaluated using `storage_gb_month`. If the unit rate is missing from the rate card, storage is marked as **`storage_modeled = False`** with reason `"Storage unit rate 'storage_gb_month' missing from PricingSnapshot rate card"`.
 - **Database Instances:**
-  - Evaluated only when `resource.database_class` is explicitly defined and non-empty.
-  - If configured but `database_hour` is missing from the rate card, `database_modeled = False` and the component cost is set to `0.00`.
+  - If `resource.database_class` is not configured, database is modeled as `$0.00` (`database_modeled = True`, no dedicated database).
+  - If `resource.database_class` is specified but `database_hour` is missing from the rate card, database is marked as **`database_modeled = False`** with reason `"Database instance rate 'database_hour' missing from PricingSnapshot rate card for <class>"`.
+- **Workload Data Volume (`data_volume_gb`):**
+  - `workload.data_volume_gb` represents the dataset or storage working set size, **NOT network egress volume**. It is recorded in classified assumptions as `"Data Working Set Size"` and does not model network egress.
 
 ---
 
 ## 4. Network Egress Modeling: Zero-Assumption Architecture
 
-Earlier iterations assumed a static heuristic of 20 KB/request when traffic throughput was specified. Under Stage 5.1 input integrity rules, **arbitrary packet size heuristics are completely removed**:
+Arbitrary packet size heuristics and dataset size conflation are completely eliminated:
 
 1. **Supported Explicit Inputs:**
-   - Workload data volume: `workload.data_volume_gb`
-   - Workload configuration monthly egress: `workload.configuration["monthly_egress_gb"]`
+   - Workload configuration monthly egress: `workload.configuration["monthly_egress_gb"]` or `workload.configuration["egress_volume_gb"]`
    - Workload average request payload: `workload.configuration["average_egress_kb_per_request"]` (evaluated with `requests_per_second`)
 2. **Missing Input Behavior:**
-   - If none of the explicit inputs above exist, network egress is **NOT modeled**.
+   - If none of the explicit network egress inputs above exist, network egress is **NOT modeled**.
    - `network_modeled = False`, `monthly_network = 0.00`.
-   - The formula transparently notes:
-     `"Network egress cost not modeled: explicit data_volume_gb, monthly_egress_gb, or average_egress_kb_per_request required"`
-   - The UI displays `"Not Modeled (explicit egress input required)"` instead of a fabricated zero or synthetic cost.
+   - Recorded reason: `"Explicit egress volume input (monthly_egress_gb or average_egress_kb_per_request) required"`.
+   - The UI and API display `"Not Modeled"` with the exact reason instead of a misleading `$0.00`.
 
 ---
 
-## 5. Operational Conventions & Metadata
+## 5. Calculation Completeness & Partial-Model Semantics
+
+Economic calculations explicitly track completeness:
+
+- **`COMPLETE`**: All five core infrastructure components (`compute`, `memory`, `database`, `storage`, `network`) are explicitly modeled. The total is labeled `"Modeled Monthly Total"`.
+- **`PARTIAL`**: One or more components are unmodeled due to missing profile inputs or pricing rates. The total is labeled `"Modeled Monthly Total (Partial — excludes <components>)"`. The system never represents an incomplete sum simply as "Total Cost".
+
+### Comparative Semantics for Partial Models
+
+When comparing baseline and proposed architectures:
+1. **Completeness Evaluation:**
+   - `comparison_completeness` is `COMPLETE` only when both baseline and proposed models are `COMPLETE`.
+   - If either model is `PARTIAL`, the comparison is marked as `PARTIAL`.
+2. **Component Tracking:**
+   - `common_modeled_components`: List of components modeled in BOTH scenarios.
+   - `unmodeled_components`: List of components unmodeled in either or both scenarios.
+3. **Delta Neutrality:**
+   - The comparison explanation explicitly warns that the delta reflects only common modeled components, preventing false impressions of savings when unmodeled components differ.
+   - Footnotes and methodology notes explicitly document excluded infrastructure categories.
+
+---
+
+## 6. Operational Conventions & Metadata
 
 Operational time conversions are exposed explicitly as calculation conventions in both `EconomicEstimate` and `EvidenceItem.provenance`:
 
@@ -71,7 +95,7 @@ Operational time conversions are exposed explicitly as calculation conventions i
 
 ---
 
-## 6. Classified Assumptions Ledger
+## 7. Classified Assumptions Ledger
 
 Every parameter used in economic modeling is classified into an explicit taxonomy:
 

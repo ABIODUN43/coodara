@@ -84,8 +84,12 @@ class CostBreakdown:
     storage: float
     network: float
     other: float
-    network_modeled: bool = True
+    compute_modeled: bool = True
+    memory_modeled: bool = True
     database_modeled: bool = True
+    storage_modeled: bool = True
+    network_modeled: bool = True
+    unmodeled_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
     def total_monthly(self) -> float:
@@ -109,6 +113,10 @@ class EconomicEstimate:
     assumptions_classified: list[dict[str, str]]
     limitations: list[str]
     validation_path: list[str]
+    calculation_completeness: str = "COMPLETE"  # "COMPLETE" or "PARTIAL"
+    modeled_components: list[str] = field(default_factory=list)
+    unmodeled_components: list[str] = field(default_factory=list)
+    unmodeled_reasons: dict[str, str] = field(default_factory=dict)
     conventions: dict[str, Any] = field(
         default_factory=lambda: {
             "hours_per_month": HOURS_PER_MONTH,
@@ -131,6 +139,11 @@ class EconomicComparison:
     proposed_breakdown: CostBreakdown
     explanation: str
     methodology_note: str
+    baseline_completeness: str = "COMPLETE"  # "COMPLETE" or "PARTIAL"
+    proposed_completeness: str = "COMPLETE"  # "COMPLETE" or "PARTIAL"
+    comparison_completeness: str = "COMPLETE"  # "COMPLETE" or "PARTIAL"
+    common_modeled_components: list[str] = field(default_factory=list)
+    unmodeled_components: list[str] = field(default_factory=list)
 
 
 # ==============================================================================
@@ -267,7 +280,6 @@ class ArchitecturalEconomicsService:
         vcpus = self.parse_vcpu(resource.cpu)
         memory_gib = self.parse_memory_gib(resource.memory)
         replicas = max(1, resource.replicas if resource.replicas is not None else 1)
-        storage_gb = max(0.0, float(resource.storage_gb if resource.storage_gb is not None else 0.0))
         has_database = bool(resource.database_class and resource.database_class.lower() not in ("none", "null", ""))
 
         effective_replicas = replicas * scaling_multiplier
@@ -287,11 +299,15 @@ class ArchitecturalEconomicsService:
         # 3. Database Cost
         database_modeled: bool = True
         monthly_database: float = 0.0
+        database_unmodeled_reason: str | None = None
         if has_database:
             db_rate_val = rates.get("database_hour") if "database_hour" in rates else rates.get("db_instance_hour")
             if db_rate_val is None:
                 database_modeled = False
                 monthly_database = 0.0
+                database_unmodeled_reason = (
+                    f"Database instance rate 'database_hour' missing from PricingSnapshot rate card for {resource.database_class}"
+                )
                 db_formula = (
                     f"Database instance cost not modeled: missing 'database_hour' in PricingSnapshot rate card for {resource.database_class}"
                 )
@@ -305,33 +321,41 @@ class ArchitecturalEconomicsService:
         # 4. Storage Cost
         storage_rate_val = rates.get("storage_gb_month") if "storage_gb_month" in rates else rates.get("disk_gb_month")
         monthly_storage: float = 0.0
-        if storage_gb > 0:
+        storage_modeled: bool = True
+        storage_unmodeled_reason: str | None = None
+        if resource.storage_gb is None:
+            storage_modeled = False
+            monthly_storage = 0.0
+            storage_unmodeled_reason = "Persistent storage capacity not specified in ResourceProfile"
+            storage_formula = "Storage cost not modeled: persistent storage capacity not specified in ResourceProfile"
+        elif float(resource.storage_gb) == 0.0:
+            storage_modeled = True
+            monthly_storage = 0.0
+            storage_formula = "No persistent storage volume configured in resource profile (0 GB)"
+        else:
+            storage_gb = float(resource.storage_gb)
             if storage_rate_val is None:
+                storage_modeled = False
                 monthly_storage = 0.0
+                storage_unmodeled_reason = "Storage unit rate 'storage_gb_month' missing from PricingSnapshot rate card"
                 storage_formula = "Storage cost not modeled: missing 'storage_gb_month' in PricingSnapshot rate card"
             else:
                 storage_rate = float(storage_rate_val)
                 monthly_storage = round(storage_gb * storage_rate, 2)
                 storage_formula = f"{storage_gb:.1f} GB × {currency} {storage_rate:.4f}/GB-mo"
-        else:
-            storage_formula = "No persistent storage volume configured in resource profile"
 
-        # 5. Network / Egress Cost (requires explicit workload volume or request-size parameters)
-        data_vol_gb = float(workload.data_volume_gb or 0.0) if workload else 0.0
+        # 5. Network / Egress Cost (requires explicit network egress inputs; data_volume_gb is working set, not egress)
         workload_cfg = workload.configuration if (workload and isinstance(workload.configuration, dict)) else {}
-        monthly_egress_cfg = workload_cfg.get("monthly_egress_gb")
+        monthly_egress_cfg = workload_cfg.get("monthly_egress_gb") or workload_cfg.get("egress_volume_gb")
         avg_kb_cfg = workload_cfg.get("average_egress_kb_per_request")
 
         monthly_egress_gb: float | None = None
         network_calculation_source = ""
 
-        if data_vol_gb > 0:
-            monthly_egress_gb = data_vol_gb
-            network_calculation_source = f"{monthly_egress_gb:.1f} GB monthly data volume from WorkloadProfile"
-        elif monthly_egress_cfg is not None:
+        if monthly_egress_cfg is not None:
             try:
                 val = float(monthly_egress_cfg)
-                if val > 0:
+                if val >= 0:
                     monthly_egress_gb = val
                     network_calculation_source = f"{monthly_egress_gb:.1f} GB monthly egress from configuration"
             except (ValueError, TypeError):
@@ -341,7 +365,7 @@ class ArchitecturalEconomicsService:
         if monthly_egress_gb is None and avg_kb_cfg is not None and rps > 0:
             try:
                 avg_kb = float(avg_kb_cfg)
-                if avg_kb > 0:
+                if avg_kb >= 0:
                     monthly_requests = rps * 86400 * DAYS_PER_MONTH
                     monthly_egress_gb = (monthly_requests * avg_kb) / (1024.0 * 1024.0)
                     network_calculation_source = (
@@ -352,11 +376,13 @@ class ArchitecturalEconomicsService:
 
         network_modeled: bool = False
         monthly_network: float = 0.0
+        network_unmodeled_reason: str | None = None
         if monthly_egress_gb is not None:
             network_rate_val = rates.get("network_egress_gb") if "network_egress_gb" in rates else rates.get("egress_per_gb")
             if network_rate_val is None:
                 network_modeled = False
                 monthly_network = 0.0
+                network_unmodeled_reason = "Network egress unit rate 'network_egress_gb' missing from PricingSnapshot rate card"
                 network_formula = (
                     "Network egress cost not modeled: missing 'network_egress_gb' in PricingSnapshot rate card"
                 )
@@ -370,10 +396,32 @@ class ArchitecturalEconomicsService:
         else:
             network_modeled = False
             monthly_network = 0.0
+            network_unmodeled_reason = "Explicit egress volume input (monthly_egress_gb or average_egress_kb_per_request) required"
             network_formula = (
-                "Network egress cost not modeled: explicit data_volume_gb, monthly_egress_gb, "
-                "or average_egress_kb_per_request required"
+                "Network egress cost not modeled: explicit monthly_egress_gb, egress_volume_gb, "
+                "or average_egress_kb_per_request with request rate required"
             )
+
+        # Build unmodeled reasons and completeness state
+        unmodeled_reasons: dict[str, str] = {}
+        modeled_components: list[str] = []
+        unmodeled_components: list[str] = []
+
+        for comp, is_modeled, reason in [
+            ("compute", True, None),
+            ("memory", True, None),
+            ("database", database_modeled, database_unmodeled_reason),
+            ("storage", storage_modeled, storage_unmodeled_reason),
+            ("network", network_modeled, network_unmodeled_reason),
+        ]:
+            if is_modeled:
+                modeled_components.append(comp)
+            else:
+                unmodeled_components.append(comp)
+                if reason:
+                    unmodeled_reasons[comp] = reason
+
+        calculation_completeness = "COMPLETE" if not unmodeled_components else "PARTIAL"
 
         breakdown = CostBreakdown(
             compute=monthly_compute,
@@ -382,8 +430,12 @@ class ArchitecturalEconomicsService:
             storage=monthly_storage,
             network=monthly_network,
             other=0.0,
-            network_modeled=network_modeled,
+            compute_modeled=True,
+            memory_modeled=True,
             database_modeled=database_modeled,
+            storage_modeled=storage_modeled,
+            network_modeled=network_modeled,
+            unmodeled_reasons=unmodeled_reasons,
         )
 
         monthly_total = breakdown.total_monthly
@@ -424,6 +476,14 @@ class ArchitecturalEconomicsService:
                 "source": f"PricingSnapshot #{pricing.id} '{pricing.pricing_source}' captured {pricing.captured_at.strftime('%Y-%m-%d') if pricing.captured_at else 'unspecified'}",
             },
         ]
+        data_vol_gb = float(workload.data_volume_gb or 0.0) if workload else 0.0
+        if data_vol_gb > 0:
+            assumptions_classified.append({
+                "field": "Data Working Set Size",
+                "value": f"{data_vol_gb:.1f} GB",
+                "type": "MEASURED" if (workload and workload.is_measured) else "ASSUMED",
+                "source": f"WorkloadProfile '{workload.name}' (data_volume_gb, working set/storage size, not network egress)",
+            })
         if monthly_egress_gb is not None:
             assumptions_classified.append({
                 "field": "Network Egress Volume",
@@ -447,17 +507,33 @@ class ArchitecturalEconomicsService:
             "5. Re-run Architectural Economics with measured telemetry (is_measured=True).",
         ]
 
+        if calculation_completeness == "COMPLETE":
+            total_label = "Modeled Monthly Total"
+        else:
+            unmodeled_str = ", ".join(unmodeled_components)
+            total_label = f"Modeled Monthly Total (Partial — excludes {unmodeled_str})"
+
+        parts = [f"{currency} {monthly_compute:.2f} (compute)", f"{currency} {monthly_memory:.2f} (memory)"]
+        if database_modeled:
+            parts.append(f"{currency} {monthly_database:.2f} (db)")
+        else:
+            parts.append("[db unmodeled]")
+        if storage_modeled:
+            parts.append(f"{currency} {monthly_storage:.2f} (storage)")
+        else:
+            parts.append("[storage unmodeled]")
+        if network_modeled:
+            parts.append(f"{currency} {monthly_network:.2f} (network)")
+        else:
+            parts.append("[network unmodeled]")
+
         formulas = {
             "compute": compute_formula,
             "memory": memory_formula,
             "database": db_formula,
             "storage": storage_formula,
             "network": network_formula,
-            "monthly_total": (
-                f"{currency} {monthly_compute:.2f} (compute) + {currency} {monthly_memory:.2f} (memory) + "
-                f"{currency} {monthly_database:.2f} (db) + {currency} {monthly_storage:.2f} (storage) + "
-                f"{currency} {monthly_network:.2f} (network) = {currency} {monthly_total:.2f}"
-            ),
+            "monthly_total": f"{' + '.join(parts)} = {currency} {monthly_total:.2f} ({total_label})",
         }
 
         return EconomicEstimate(
@@ -466,6 +542,10 @@ class ArchitecturalEconomicsService:
             monthly=monthly_total,
             annual=annual_total,
             currency=currency,
+            calculation_completeness=calculation_completeness,
+            modeled_components=modeled_components,
+            unmodeled_components=unmodeled_components,
+            unmodeled_reasons=unmodeled_reasons,
             breakdown=breakdown,
             formulas=formulas,
             assumptions_classified=assumptions_classified,
@@ -504,24 +584,66 @@ class ArchitecturalEconomicsService:
             else 0.0
         )
 
-        if diff < 0:
-            explanation = (
-                f"The proposed scenario models {currency} {abs(diff):.2f}/month lower cost "
-                f"({abs(rel_pct):.1f}% reduction) under the supplied workload and resource assumptions."
-            )
-        elif diff > 0:
-            explanation = (
-                f"The proposed scenario models {currency} {diff:.2f}/month higher cost "
-                f"(+{rel_pct:.1f}% increase) under the supplied workload and resource assumptions."
+        all_core = ["compute", "memory", "database", "storage", "network"]
+        baseline_set = set(baseline.modeled_components)
+        proposed_set = set(proposed.modeled_components)
+        common_modeled_components = [c for c in all_core if c in baseline_set and c in proposed_set]
+        unmodeled_components = [c for c in all_core if c not in baseline_set or c not in proposed_set]
+
+        baseline_completeness = baseline.calculation_completeness
+        proposed_completeness = proposed.calculation_completeness
+        comparison_completeness = (
+            "COMPLETE"
+            if (baseline_completeness == "COMPLETE" and proposed_completeness == "COMPLETE")
+            else "PARTIAL"
+        )
+
+        if comparison_completeness == "COMPLETE":
+            if diff < 0:
+                explanation = (
+                    f"The proposed scenario models {currency} {abs(diff):.2f}/month lower cost "
+                    f"({abs(rel_pct):.1f}% reduction) under the supplied workload and resource assumptions."
+                )
+            elif diff > 0:
+                explanation = (
+                    f"The proposed scenario models {currency} {diff:.2f}/month higher cost "
+                    f"(+{rel_pct:.1f}% increase) under the supplied workload and resource assumptions."
+                )
+            else:
+                explanation = "Both scenarios model identical monthly cost under the supplied assumptions."
+
+            methodology_note = (
+                "Delta convention: Delta = Proposed - Baseline. "
+                "Complete economic model: all infrastructure components (compute, memory, database, storage, network) "
+                "are explicitly modeled across both baseline and proposed scenarios."
             )
         else:
-            explanation = "Both scenarios model identical monthly cost under the supplied assumptions."
+            common_str = ", ".join(common_modeled_components) if common_modeled_components else "none"
+            unmodeled_str = ", ".join(unmodeled_components) if unmodeled_components else "none"
+            if diff < 0:
+                explanation = (
+                    f"The proposed scenario models {currency} {abs(diff):.2f}/month lower cost "
+                    f"({abs(rel_pct):.1f}% reduction) across common modeled components ({common_str}). "
+                    f"Note: This comparison is PARTIAL because some components ({unmodeled_str}) are unmodeled."
+                )
+            elif diff > 0:
+                explanation = (
+                    f"The proposed scenario models {currency} {diff:.2f}/month higher cost "
+                    f"(+{rel_pct:.1f}% increase) across common modeled components ({common_str}). "
+                    f"Note: This comparison is PARTIAL because some components ({unmodeled_str}) are unmodeled."
+                )
+            else:
+                explanation = (
+                    f"Both scenarios model identical monthly cost across common modeled components ({common_str}). "
+                    f"Note: This comparison is PARTIAL because some components ({unmodeled_str}) are unmodeled."
+                )
 
-        methodology_note = (
-            "Delta convention: Delta = Proposed - Baseline. "
-            "These modeled differences reflect structural and configuration assumptions. "
-            "Architectural fitness and ROI must be interpreted by the engineering decision-maker."
-        )
+            methodology_note = (
+                "Delta convention: Delta = Proposed - Baseline. "
+                f"Partial economic comparison: Evaluated across common modeled components ({common_str}). "
+                f"Unmodeled components ({unmodeled_str}) are excluded from the comparison delta. "
+                "Architectural fitness and ROI must be interpreted with awareness of unmodeled infrastructure categories."
+            )
 
         return EconomicComparison(
             baseline_monthly=baseline.monthly,
@@ -529,6 +651,11 @@ class ArchitecturalEconomicsService:
             absolute_difference=diff,
             relative_difference_pct=rel_pct,
             currency=currency,
+            baseline_completeness=baseline_completeness,
+            proposed_completeness=proposed_completeness,
+            comparison_completeness=comparison_completeness,
+            common_modeled_components=common_modeled_components,
+            unmodeled_components=unmodeled_components,
             baseline_breakdown=baseline.breakdown,
             proposed_breakdown=proposed.breakdown,
             explanation=explanation,
@@ -637,10 +764,14 @@ class ArchitecturalEconomicsService:
             "pricing_source": pricing.pricing_source,
             "provider": pricing.provider,
             "region": pricing.region,
+            "calculation_completeness": baseline_estimate.calculation_completeness,
+            "modeled_components": baseline_estimate.modeled_components,
+            "unmodeled_components": baseline_estimate.unmodeled_components,
+            "unmodeled_reasons": baseline_estimate.unmodeled_reasons,
             "assumptions_classified": baseline_estimate.assumptions_classified,
         }
 
-        def _breakdown_dict(b: CostBreakdown) -> dict[str, float]:
+        def _breakdown_dict(b: CostBreakdown) -> dict[str, Any]:
             d = asdict(b)
             d["total_monthly"] = b.total_monthly
             return d
@@ -651,6 +782,10 @@ class ArchitecturalEconomicsService:
                 "daily": baseline_estimate.daily,
                 "monthly": baseline_estimate.monthly,
                 "annual": baseline_estimate.annual,
+                "calculation_completeness": baseline_estimate.calculation_completeness,
+                "modeled_components": baseline_estimate.modeled_components,
+                "unmodeled_components": baseline_estimate.unmodeled_components,
+                "unmodeled_reasons": baseline_estimate.unmodeled_reasons,
                 "breakdown": _breakdown_dict(baseline_estimate.breakdown),
                 "formulas": baseline_estimate.formulas,
                 "conventions": baseline_estimate.conventions,
@@ -660,11 +795,20 @@ class ArchitecturalEconomicsService:
                 "daily": proposed_estimate.daily,
                 "monthly": proposed_estimate.monthly,
                 "annual": proposed_estimate.annual,
+                "calculation_completeness": proposed_estimate.calculation_completeness,
+                "modeled_components": proposed_estimate.modeled_components,
+                "unmodeled_components": proposed_estimate.unmodeled_components,
+                "unmodeled_reasons": proposed_estimate.unmodeled_reasons,
                 "breakdown": _breakdown_dict(proposed_estimate.breakdown),
                 "formulas": proposed_estimate.formulas,
                 "conventions": proposed_estimate.conventions,
             },
             "comparison": {
+                "baseline_completeness": comparison.baseline_completeness,
+                "proposed_completeness": comparison.proposed_completeness,
+                "comparison_completeness": comparison.comparison_completeness,
+                "common_modeled_components": comparison.common_modeled_components,
+                "unmodeled_components": comparison.unmodeled_components,
                 "absolute_difference": comparison.absolute_difference,
                 "relative_difference_pct": comparison.relative_difference_pct,
                 "explanation": comparison.explanation,
@@ -699,12 +843,22 @@ class ArchitecturalEconomicsService:
         saved_scenario = await self.lab_repo.create_cost_scenario(scenario)
 
         # 2. Persist EvidenceItem in lab_evidence_ledger
-        evidence_claim = (
-            f"Modeled monthly cost: {pricing.currency} {proposed_estimate.monthly:.2f} "
-            f"(difference: {pricing.currency} {comparison.absolute_difference:+.2f} / "
-            f"{comparison.relative_difference_pct:+.1f}%) calculated from the supplied PricingSnapshot "
-            f"'{pricing.pricing_source}' ({pricing.provider} {pricing.region}) and {resource.name} assumptions."
-        )
+        if comparison.comparison_completeness == "COMPLETE":
+            evidence_claim = (
+                f"Modeled monthly cost (COMPLETE): {pricing.currency} {proposed_estimate.monthly:.2f} "
+                f"(difference: {pricing.currency} {comparison.absolute_difference:+.2f} / "
+                f"{comparison.relative_difference_pct:+.1f}%) calculated from the supplied PricingSnapshot "
+                f"'{pricing.pricing_source}' ({pricing.provider} {pricing.region}) and {resource.name} assumptions."
+            )
+        else:
+            unmodeled_str = ", ".join(comparison.unmodeled_components)
+            common_str = ", ".join(comparison.common_modeled_components)
+            evidence_claim = (
+                f"Modeled monthly cost (PARTIAL — excludes {unmodeled_str}): {pricing.currency} {proposed_estimate.monthly:.2f} "
+                f"(difference: {pricing.currency} {comparison.absolute_difference:+.2f} / "
+                f"{comparison.relative_difference_pct:+.1f}%) calculated from the supplied PricingSnapshot "
+                f"'{pricing.pricing_source}' across common modeled components ({common_str})."
+            )
 
         evidence_provenance = {
             "cost_scenario_id": saved_scenario.id,
@@ -712,6 +866,11 @@ class ArchitecturalEconomicsService:
             "run_id": run_id,
             "workload_profile_id": workload.id if workload else None,
             "resource_profile_id": resource.id,
+            "calculation_completeness": proposed_estimate.calculation_completeness,
+            "comparison_completeness": comparison.comparison_completeness,
+            "modeled_components": proposed_estimate.modeled_components,
+            "unmodeled_components": proposed_estimate.unmodeled_components,
+            "unmodeled_reasons": proposed_estimate.unmodeled_reasons,
             "pricing_snapshot": {
                 "id": pricing.id,
                 "provider": pricing.provider,
@@ -745,6 +904,11 @@ class ArchitecturalEconomicsService:
             claim=evidence_claim,
             data={
                 "cost_scenario_id": saved_scenario.id,
+                "calculation_completeness": proposed_estimate.calculation_completeness,
+                "comparison_completeness": comparison.comparison_completeness,
+                "modeled_components": proposed_estimate.modeled_components,
+                "unmodeled_components": proposed_estimate.unmodeled_components,
+                "unmodeled_reasons": proposed_estimate.unmodeled_reasons,
                 "baseline_monthly": baseline_estimate.monthly,
                 "proposed_monthly": proposed_estimate.monthly,
                 "monthly_difference": comparison.absolute_difference,

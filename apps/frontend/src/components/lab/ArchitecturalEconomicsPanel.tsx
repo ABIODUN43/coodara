@@ -22,7 +22,7 @@ import type {
   ResourceProfile,
   WorkloadProfile,
 } from "@/types/lab";
-import { AssumptionTypeBadge, EvidenceCategoryBadge } from "./LabBadges";
+import { AssumptionTypeBadge, CompletenessBadge, EvidenceCategoryBadge } from "./LabBadges";
 
 interface ArchitecturalEconomicsPanelProps {
   experiment: Experiment;
@@ -318,14 +318,22 @@ export function ArchitecturalEconomicsPanel({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Baseline Card */}
             <div className="rounded-xl border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-4 space-y-2">
-              <span className="text-[11px] font-semibold text-[var(--cd-ink-soft)] uppercase tracking-wider">
-                Baseline Architecture
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-[var(--cd-ink-soft)] uppercase tracking-wider">
+                  Baseline Architecture
+                </span>
+                <CompletenessBadge completeness={baselineEstimate.calculation_completeness} />
+              </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-black text-[var(--cd-ink)] font-mono">
                   ${baselineEstimate.monthly.toFixed(2)}
                 </span>
                 <span className="text-xs text-[var(--cd-ink-soft)]">/month</span>
+              </div>
+              <div className="text-[10px] font-medium text-[var(--cd-ink-faint)]">
+                {baselineEstimate.calculation_completeness === "COMPLETE"
+                  ? "Modeled Monthly Total"
+                  : `Modeled Total (Partial — excludes ${(baselineEstimate.unmodeled_components || []).join(", ") || "unmodeled"})`}
               </div>
               <div className="text-[11px] text-[var(--cd-ink-faint)] flex items-center justify-between pt-1 border-t border-[var(--cd-border-soft)]">
                 <span>Daily: ${baselineEstimate.daily.toFixed(2)}</span>
@@ -335,14 +343,22 @@ export function ArchitecturalEconomicsPanel({
 
             {/* Proposed Card */}
             <div className="rounded-xl border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-4 space-y-2">
-              <span className="text-[11px] font-semibold text-[var(--cd-ink-soft)] uppercase tracking-wider">
-                Proposed Architecture
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-[var(--cd-ink-soft)] uppercase tracking-wider">
+                  Proposed Architecture
+                </span>
+                <CompletenessBadge completeness={proposedEstimate.calculation_completeness} />
+              </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-black text-[var(--cd-ink)] font-mono">
                   ${proposedEstimate.monthly.toFixed(2)}
                 </span>
                 <span className="text-xs text-[var(--cd-ink-soft)]">/month</span>
+              </div>
+              <div className="text-[10px] font-medium text-[var(--cd-ink-faint)]">
+                {proposedEstimate.calculation_completeness === "COMPLETE"
+                  ? "Modeled Monthly Total"
+                  : `Modeled Total (Partial — excludes ${(proposedEstimate.unmodeled_components || []).join(", ") || "unmodeled"})`}
               </div>
               <div className="text-[11px] text-[var(--cd-ink-faint)] flex items-center justify-between pt-1 border-t border-[var(--cd-border-soft)]">
                 <span>Daily: ${proposedEstimate.daily.toFixed(2)}</span>
@@ -364,11 +380,14 @@ export function ArchitecturalEconomicsPanel({
                 <span className="text-[11px] font-semibold uppercase tracking-wider">
                   Modeled Difference (&Delta;)
                 </span>
-                {comparison.absolute_difference < 0 ? (
-                  <TrendingDown className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                )}
+                <div className="flex items-center gap-1.5">
+                  <CompletenessBadge completeness={comparison.comparison_completeness} />
+                  {comparison.absolute_difference < 0 ? (
+                    <TrendingDown className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  ) : (
+                    <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  )}
+                </div>
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-black font-mono">
@@ -378,6 +397,11 @@ export function ArchitecturalEconomicsPanel({
                   ({comparison.relative_difference_pct > 0 ? `+${comparison.relative_difference_pct.toFixed(1)}` : comparison.relative_difference_pct.toFixed(1)}%)
                 </span>
               </div>
+              {comparison.comparison_completeness === "PARTIAL" && (
+                <div className="text-[10px] font-medium opacity-80">
+                  Common modeled: {(comparison.common_modeled_components || []).join(", ") || "none"}
+                </div>
+              )}
               <p className="text-[11px] leading-tight opacity-90">
                 {comparison.explanation}
               </p>
@@ -416,6 +440,7 @@ export function ArchitecturalEconomicsPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--cd-border-soft)] font-mono">
+                {/* Compute */}
                 <tr>
                   <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Compute (vCPU)</td>
                   <td className="py-2.5 px-4 text-right">${baselineEstimate.breakdown.compute.toFixed(2)}</td>
@@ -424,6 +449,8 @@ export function ArchitecturalEconomicsPanel({
                     {(proposedEstimate.breakdown.compute - baselineEstimate.breakdown.compute) > 0 ? `+$${(proposedEstimate.breakdown.compute - baselineEstimate.breakdown.compute).toFixed(2)}` : `$${(proposedEstimate.breakdown.compute - baselineEstimate.breakdown.compute).toFixed(2)}`}
                   </td>
                 </tr>
+
+                {/* Memory */}
                 <tr>
                   <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Memory (RAM)</td>
                   <td className="py-2.5 px-4 text-right">${baselineEstimate.breakdown.memory.toFixed(2)}</td>
@@ -432,20 +459,32 @@ export function ArchitecturalEconomicsPanel({
                     {(proposedEstimate.breakdown.memory - baselineEstimate.breakdown.memory) > 0 ? `+$${(proposedEstimate.breakdown.memory - baselineEstimate.breakdown.memory).toFixed(2)}` : `$${(proposedEstimate.breakdown.memory - baselineEstimate.breakdown.memory).toFixed(2)}`}
                   </td>
                 </tr>
+
+                {/* Database */}
                 <tr>
                   <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Database Instance</td>
                   <td className="py-2.5 px-4 text-right">
                     {baselineEstimate.breakdown.database_modeled !== false ? (
                       `$${baselineEstimate.breakdown.database.toFixed(2)}`
                     ) : (
-                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled (rate missing)</span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Not Modeled</span>
+                        <span className="text-[10px] text-[var(--cd-ink-faint)] italic max-w-[200px] truncate" title={baselineEstimate.breakdown.unmodeled_reasons?.database}>
+                          {baselineEstimate.breakdown.unmodeled_reasons?.database || "rate missing"}
+                        </span>
+                      </div>
                     )}
                   </td>
                   <td className="py-2.5 px-4 text-right">
                     {proposedEstimate.breakdown.database_modeled !== false ? (
                       `$${proposedEstimate.breakdown.database.toFixed(2)}`
                     ) : (
-                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled (rate missing)</span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Not Modeled</span>
+                        <span className="text-[10px] text-[var(--cd-ink-faint)] italic max-w-[200px] truncate" title={proposedEstimate.breakdown.unmodeled_reasons?.database}>
+                          {proposedEstimate.breakdown.unmodeled_reasons?.database || "rate missing"}
+                        </span>
+                      </div>
                     )}
                   </td>
                   <td className="py-2.5 px-4 text-right font-semibold">
@@ -458,28 +497,70 @@ export function ArchitecturalEconomicsPanel({
                     )}
                   </td>
                 </tr>
+
+                {/* Storage */}
                 <tr>
                   <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Persistent Storage</td>
-                  <td className="py-2.5 px-4 text-right">${baselineEstimate.breakdown.storage.toFixed(2)}</td>
-                  <td className="py-2.5 px-4 text-right">${proposedEstimate.breakdown.storage.toFixed(2)}</td>
+                  <td className="py-2.5 px-4 text-right">
+                    {baselineEstimate.breakdown.storage_modeled !== false ? (
+                      `$${baselineEstimate.breakdown.storage.toFixed(2)}`
+                    ) : (
+                      <div className="flex flex-col items-end">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Not Modeled</span>
+                        <span className="text-[10px] text-[var(--cd-ink-faint)] italic max-w-[200px] truncate" title={baselineEstimate.breakdown.unmodeled_reasons?.storage}>
+                          {baselineEstimate.breakdown.unmodeled_reasons?.storage || "capacity not specified"}
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-4 text-right">
+                    {proposedEstimate.breakdown.storage_modeled !== false ? (
+                      `$${proposedEstimate.breakdown.storage.toFixed(2)}`
+                    ) : (
+                      <div className="flex flex-col items-end">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Not Modeled</span>
+                        <span className="text-[10px] text-[var(--cd-ink-faint)] italic max-w-[200px] truncate" title={proposedEstimate.breakdown.unmodeled_reasons?.storage}>
+                          {proposedEstimate.breakdown.unmodeled_reasons?.storage || "capacity not specified"}
+                        </span>
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2.5 px-4 text-right font-semibold">
-                    {(proposedEstimate.breakdown.storage - baselineEstimate.breakdown.storage) > 0 ? `+$${(proposedEstimate.breakdown.storage - baselineEstimate.breakdown.storage).toFixed(2)}` : `$${(proposedEstimate.breakdown.storage - baselineEstimate.breakdown.storage).toFixed(2)}`}
+                    {baselineEstimate.breakdown.storage_modeled !== false && proposedEstimate.breakdown.storage_modeled !== false ? (
+                      (proposedEstimate.breakdown.storage - baselineEstimate.breakdown.storage) > 0
+                        ? `+$${(proposedEstimate.breakdown.storage - baselineEstimate.breakdown.storage).toFixed(2)}`
+                        : `$${(proposedEstimate.breakdown.storage - baselineEstimate.breakdown.storage).toFixed(2)}`
+                    ) : (
+                      <span className="text-[11px] text-[var(--cd-ink-faint)] font-normal italic">—</span>
+                    )}
                   </td>
                 </tr>
+
+                {/* Network */}
                 <tr>
                   <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)] font-medium">Network Egress / Transfer</td>
                   <td className="py-2.5 px-4 text-right">
                     {baselineEstimate.breakdown.network_modeled !== false ? (
                       `$${baselineEstimate.breakdown.network.toFixed(2)}`
                     ) : (
-                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled (explicit egress input required)</span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Not Modeled</span>
+                        <span className="text-[10px] text-[var(--cd-ink-faint)] italic max-w-[200px] truncate" title={baselineEstimate.breakdown.unmodeled_reasons?.network}>
+                          {baselineEstimate.breakdown.unmodeled_reasons?.network || "explicit egress input required"}
+                        </span>
+                      </div>
                     )}
                   </td>
                   <td className="py-2.5 px-4 text-right">
                     {proposedEstimate.breakdown.network_modeled !== false ? (
                       `$${proposedEstimate.breakdown.network.toFixed(2)}`
                     ) : (
-                      <span className="text-[11px] text-[var(--cd-ink-faint)] italic">Not Modeled</span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Not Modeled</span>
+                        <span className="text-[10px] text-[var(--cd-ink-faint)] italic max-w-[200px] truncate" title={proposedEstimate.breakdown.unmodeled_reasons?.network}>
+                          {proposedEstimate.breakdown.unmodeled_reasons?.network || "explicit egress input required"}
+                        </span>
+                      </div>
                     )}
                   </td>
                   <td className="py-2.5 px-4 text-right font-semibold">
@@ -492,8 +573,14 @@ export function ArchitecturalEconomicsPanel({
                     )}
                   </td>
                 </tr>
+
+                {/* Total Monthly Row */}
                 <tr className="bg-[var(--cd-surface)] font-bold border-t border-[var(--cd-border)]">
-                  <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)]">Total Monthly Cost</td>
+                  <td className="py-2.5 px-4 font-sans text-[var(--cd-ink)]">
+                    {comparison.comparison_completeness === "COMPLETE"
+                      ? "Modeled Monthly Total"
+                      : "Modeled Monthly Total (Partial)"}
+                  </td>
                   <td className="py-2.5 px-4 text-right">${baselineEstimate.monthly.toFixed(2)}</td>
                   <td className="py-2.5 px-4 text-right">${proposedEstimate.monthly.toFixed(2)}</td>
                   <td className="py-2.5 px-4 text-right">
@@ -502,6 +589,12 @@ export function ArchitecturalEconomicsPanel({
                 </tr>
               </tbody>
             </table>
+            {comparison.comparison_completeness === "PARTIAL" && (
+              <div className="bg-[var(--cd-bg)] px-4 py-2 border-t border-[var(--cd-border-soft)] text-[11px] text-[var(--cd-ink-soft)]">
+                * Partial model: comparison reflects common modeled components ({comparison.common_modeled_components?.join(", ") || "none"}).
+                Unmodeled components are excluded from the comparison delta.
+              </div>
+            )}
           </div>
 
           {/* Classified Assumptions Ledger */}

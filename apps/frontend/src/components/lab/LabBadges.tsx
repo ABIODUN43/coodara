@@ -290,3 +290,21 @@ export function AssumptionTypeBadge({
   }
 }
 
+/**
+ * Visual badge for calculation completeness (COMPLETE vs PARTIAL).
+ */
+export function CompletenessBadge({ completeness }: { completeness?: string }) {
+  if (completeness === "COMPLETE") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+        COMPLETE
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300 border border-amber-500/20">
+      PARTIAL
+    </span>
+  );
+}
+

@@ -112,6 +112,7 @@ def test_deterministic_cost_calculation():
         name="Steady Production",
         requests_per_second=50.0,
         data_volume_gb=100.0,
+        configuration={"monthly_egress_gb": 100.0},
         is_measured=False,
     )
 
@@ -153,11 +154,14 @@ def test_deterministic_cost_calculation():
     assert estimate.monthly == expected_monthly
     assert estimate.annual == round(expected_monthly * 12.0, 2)
     assert estimate.currency == "USD"
+    assert estimate.calculation_completeness == "COMPLETE"
+    assert estimate.unmodeled_components == []
 
     # Verify formula transparency
     assert "compute" in estimate.formulas
     assert "memory" in estimate.formulas
     assert "monthly_total" in estimate.formulas
+    assert "Modeled Monthly Total" in estimate.formulas["monthly_total"]
 
     # Verify assumptions classified - PricingSnapshot must be 'SUPPLIED PRICING SNAPSHOT'
     types = [a["type"] for a in estimate.assumptions_classified]
@@ -168,6 +172,7 @@ def test_deterministic_cost_calculation():
     # Verify modeled flags and conventions
     assert estimate.breakdown.network_modeled is True
     assert estimate.breakdown.database_modeled is True
+    assert estimate.breakdown.storage_modeled is True
     assert estimate.conventions["hours_per_month"] == 730.0
     assert estimate.conventions["days_per_month"] == 30.4167
 
@@ -231,32 +236,41 @@ def test_missing_network_inputs_marks_network_not_modeled():
     est1 = service.calculate_estimate(resource=resource, workload=None, pricing=pricing)
     assert est1.breakdown.network_modeled is False
     assert est1.breakdown.network == 0.0
-    assert "explicit data_volume_gb" in est1.formulas["network"]
+    assert est1.calculation_completeness == "PARTIAL"
+    assert "network" in est1.unmodeled_components
+    assert "explicit monthly_egress_gb" in est1.formulas["network"]
 
-    # 2. Workload with RPS only, but NO explicit payload size or data volume (20 KB assumption eliminated!)
+    # 2. Workload with RPS only, but NO explicit payload size or data volume
     workload_rps_only = WorkloadProfile(id=1, name="RPS Only", requests_per_second=100.0)
     est2 = service.calculate_estimate(resource=resource, workload=workload_rps_only, pricing=pricing)
     assert est2.breakdown.network_modeled is False
     assert est2.breakdown.network == 0.0
-    assert "explicit data_volume_gb" in est2.formulas["network"]
+    assert "network" in est2.unmodeled_components
+    assert "explicit monthly_egress_gb" in est2.formulas["network"]
 
 
 def test_explicit_network_inputs_modeled_correctly():
     service = ArchitecturalEconomicsService(AsyncMock())
-    resource = ResourceProfile(id=1, name="Res", cpu="2", memory="4")
+    resource = ResourceProfile(id=1, name="Res", cpu="2", memory="4", storage_gb=10.0)
     pricing = PricingSnapshot(
         id=1,
         pricing_source="AWS Standard",
         currency="USD",
-        pricing_data={"vcpu_hour": 0.04, "memory_gib_hour": 0.005, "network_egress_gb": 0.10},
+        pricing_data={
+            "vcpu_hour": 0.04,
+            "memory_gib_hour": 0.005,
+            "storage_gb_month": 0.10,
+            "network_egress_gb": 0.10,
+        },
     )
 
-    # 1. Explicit data_volume_gb
+    # 1. data_volume_gb alone does NOT model network egress (it is working set / dataset size)
     workload_vol = WorkloadProfile(id=1, name="Volume Workload", data_volume_gb=500.0)
     est_vol = service.calculate_estimate(resource=resource, workload=workload_vol, pricing=pricing)
-    assert est_vol.breakdown.network_modeled is True
-    assert est_vol.breakdown.network == 50.0  # 500 * 0.10
-    assert "500.0 GB" in est_vol.formulas["network"]
+    assert est_vol.breakdown.network_modeled is False
+    assert est_vol.breakdown.network == 0.0
+    assert "network" in est_vol.unmodeled_components
+    assert est_vol.calculation_completeness == "PARTIAL"
 
     # 2. Explicit monthly_egress_gb in configuration
     workload_cfg_mo = WorkloadProfile(
@@ -265,6 +279,7 @@ def test_explicit_network_inputs_modeled_correctly():
     est_cfg = service.calculate_estimate(resource=resource, workload=workload_cfg_mo, pricing=pricing)
     assert est_cfg.breakdown.network_modeled is True
     assert est_cfg.breakdown.network == 20.0  # 200 * 0.10
+    assert est_cfg.calculation_completeness == "COMPLETE"
 
     # 3. Explicit average_egress_kb_per_request in configuration with RPS
     workload_avg_kb = WorkloadProfile(
@@ -714,3 +729,184 @@ def test_unsupported_claims_guardrails():
     for phrase in prohibited_phrases:
         assert phrase not in comparison.explanation.lower(), f"Prohibited phrase '{phrase}' found in explanation"
         assert phrase not in comparison.methodology_note.lower(), f"Prohibited phrase '{phrase}' found in methodology note"
+
+
+def test_completeness_states_and_unmodeled_storage_and_database():
+    """
+    Verify:
+    1. storage_gb is None -> storage_modeled is False with reason
+    2. storage_gb == 0 -> storage_modeled is True, cost is $0.00
+    3. database_class is set but missing rate -> database_modeled is False with reason
+    4. database_class is None -> database_modeled is True, cost is $0.00
+    5. calculation_completeness is PARTIAL when any component is unmodeled
+    """
+    service = ArchitecturalEconomicsService(AsyncMock())
+    pricing = PricingSnapshot(
+        id=1,
+        pricing_source="AWS Incomplete",
+        currency="USD",
+        pricing_data={
+            "vcpu_hour": 0.04,
+            "memory_gib_hour": 0.005,
+            # missing database_hour and storage_gb_month and network_egress_gb
+        },
+    )
+
+    # 1. Unspecified storage (storage_gb is None)
+    res_none_storage = ResourceProfile(id=1, name="No Storage Spec", cpu="2", memory="4", storage_gb=None)
+    est = service.calculate_estimate(resource=res_none_storage, workload=None, pricing=pricing)
+    assert est.breakdown.storage_modeled is False
+    assert est.breakdown.storage == 0.0
+    assert "storage" in est.unmodeled_components
+    assert "storage" in est.unmodeled_reasons
+    assert "capacity not specified" in est.unmodeled_reasons["storage"].lower()
+    assert est.calculation_completeness == "PARTIAL"
+
+    # 2. Explicit 0 GB storage
+    res_zero_storage = ResourceProfile(id=2, name="Stateless 0GB", cpu="2", memory="4", storage_gb=0.0)
+    est_zero = service.calculate_estimate(resource=res_zero_storage, workload=None, pricing=pricing)
+    assert est_zero.breakdown.storage_modeled is True
+    assert est_zero.breakdown.storage == 0.0
+    assert "storage" not in est_zero.unmodeled_components
+
+    # 3. Database configured but missing rate in snapshot
+    res_db = ResourceProfile(id=3, name="DB Service", cpu="2", memory="4", database_class="db.t4g.medium")
+    est_db = service.calculate_estimate(resource=res_db, workload=None, pricing=pricing)
+    assert est_db.breakdown.database_modeled is False
+    assert est_db.breakdown.database == 0.0
+    assert "database" in est_db.unmodeled_components
+    assert "missing" in est_db.unmodeled_reasons["database"].lower()
+
+    # 4. No database configured (legitimate $0.00)
+    res_no_db = ResourceProfile(id=4, name="Stateless Service", cpu="2", memory="4", database_class=None)
+    est_no_db = service.calculate_estimate(resource=res_no_db, workload=None, pricing=pricing)
+    assert est_no_db.breakdown.database_modeled is True
+    assert est_no_db.breakdown.database == 0.0
+    assert "database" not in est_no_db.unmodeled_components
+
+
+def test_partial_comparison_semantics_and_explanation():
+    """
+    Verify compare_estimates correctly marks PARTIAL comparison completeness,
+    computes common_modeled_components and unmodeled_components, and reflects
+    partial-model caveats in explanation and methodology_note.
+    """
+    service = ArchitecturalEconomicsService(AsyncMock())
+
+    # Baseline has compute, memory, database modeled; storage and network unmodeled
+    breakdown_base = CostBreakdown(
+        compute=100.0,
+        memory=40.0,
+        database=50.0,
+        storage=0.0,
+        network=0.0,
+        other=0.0,
+        compute_modeled=True,
+        memory_modeled=True,
+        database_modeled=True,
+        storage_modeled=False,
+        network_modeled=False,
+        unmodeled_reasons={"storage": "Capacity not specified", "network": "Egress input required"},
+    )
+    est_base = EconomicEstimate(
+        hourly=0.26,
+        daily=6.24,
+        monthly=190.0,
+        annual=2280.0,
+        currency="USD",
+        breakdown=breakdown_base,
+        formulas={},
+        assumptions_classified=[],
+        limitations=[],
+        validation_path=[],
+        calculation_completeness="PARTIAL",
+        modeled_components=["compute", "memory", "database"],
+        unmodeled_components=["storage", "network"],
+        unmodeled_reasons={"storage": "Capacity not specified", "network": "Egress input required"},
+    )
+
+    # Proposed has compute, memory, database, storage modeled; network unmodeled
+    breakdown_prop = CostBreakdown(
+        compute=80.0,
+        memory=30.0,
+        database=50.0,
+        storage=10.0,
+        network=0.0,
+        other=0.0,
+        compute_modeled=True,
+        memory_modeled=True,
+        database_modeled=True,
+        storage_modeled=True,
+        network_modeled=False,
+        unmodeled_reasons={"network": "Egress input required"},
+    )
+    est_prop = EconomicEstimate(
+        hourly=0.23,
+        daily=5.58,
+        monthly=170.0,
+        annual=2040.0,
+        currency="USD",
+        breakdown=breakdown_prop,
+        formulas={},
+        assumptions_classified=[],
+        limitations=[],
+        validation_path=[],
+        calculation_completeness="PARTIAL",
+        modeled_components=["compute", "memory", "database", "storage"],
+        unmodeled_components=["network"],
+        unmodeled_reasons={"network": "Egress input required"},
+    )
+
+    comparison = service.compare_estimates(est_base, est_prop)
+
+    assert comparison.comparison_completeness == "PARTIAL"
+    assert comparison.baseline_completeness == "PARTIAL"
+    assert comparison.proposed_completeness == "PARTIAL"
+    assert set(comparison.common_modeled_components) == {"compute", "memory", "database"}
+    assert "network" in comparison.unmodeled_components
+    assert "storage" in comparison.unmodeled_components
+
+    # Verify neutral explanation states comparison is partial
+    assert "PARTIAL" in comparison.explanation
+    assert "common modeled components" in comparison.explanation
+    assert "Partial economic comparison" in comparison.methodology_note
+
+
+def test_data_volume_gb_working_set_semantics():
+    """
+    Ensure data_volume_gb is treated as data working set size in assumptions,
+    NOT as monthly network egress volume.
+    """
+    service = ArchitecturalEconomicsService(AsyncMock())
+    resource = ResourceProfile(id=1, name="Res", cpu="2", memory="4", storage_gb=20.0)
+    workload = WorkloadProfile(
+        id=1,
+        name="Large Working Set",
+        data_volume_gb=1000.0,  # 1 TB dataset
+    )
+    pricing = PricingSnapshot(
+        id=1,
+        pricing_source="AWS Standard",
+        currency="USD",
+        pricing_data={
+            "vcpu_hour": 0.04,
+            "memory_gib_hour": 0.005,
+            "storage_gb_month": 0.10,
+            "network_egress_gb": 0.09,
+        },
+    )
+
+    est = service.calculate_estimate(resource=resource, workload=workload, pricing=pricing)
+
+    # Network egress MUST be unmodeled because data_volume_gb is working set, not egress
+    assert est.breakdown.network_modeled is False
+    assert est.breakdown.network == 0.0
+    assert "network" in est.unmodeled_components
+
+    # Data working set size MUST be recorded in classified assumptions
+    working_set_assumptions = [
+        a for a in est.assumptions_classified if a["field"] == "Data Working Set Size"
+    ]
+    assert len(working_set_assumptions) == 1
+    assert "1000.0 GB" in working_set_assumptions[0]["value"]
+    assert "not network egress" in working_set_assumptions[0]["source"]

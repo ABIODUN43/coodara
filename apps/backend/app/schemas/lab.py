@@ -431,8 +431,12 @@ class CostBreakdownSchema(BaseModel):
     storage: float
     network: float
     other: float = 0.0
-    network_modeled: bool = True
+    compute_modeled: bool = True
+    memory_modeled: bool = True
     database_modeled: bool = True
+    storage_modeled: bool = True
+    network_modeled: bool = True
+    unmodeled_reasons: dict[str, str] = Field(default_factory=dict)
     total_monthly: float = 0.0
 
     def model_post_init(self, __context: Any) -> None:
@@ -464,6 +468,10 @@ class EconomicEstimateSchema(BaseModel):
     monthly: float
     annual: float
     currency: str
+    calculation_completeness: str = "COMPLETE"
+    modeled_components: list[str] = Field(default_factory=list)
+    unmodeled_components: list[str] = Field(default_factory=list)
+    unmodeled_reasons: dict[str, str] = Field(default_factory=dict)
     breakdown: CostBreakdownSchema
     formulas: dict[str, str] = Field(default_factory=dict)
     assumptions_classified: list[ClassifiedAssumptionSchema] = Field(default_factory=list)
@@ -480,6 +488,11 @@ class EconomicComparisonSchema(BaseModel):
     absolute_difference: float
     relative_difference_pct: float
     currency: str
+    baseline_completeness: str = "COMPLETE"
+    proposed_completeness: str = "COMPLETE"
+    comparison_completeness: str = "COMPLETE"
+    common_modeled_components: list[str] = Field(default_factory=list)
+    unmodeled_components: list[str] = Field(default_factory=list)
     baseline_breakdown: CostBreakdownSchema
     proposed_breakdown: CostBreakdownSchema
     explanation: str

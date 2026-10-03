@@ -410,8 +410,12 @@ export interface CostBreakdown {
   network: number;
   other: number;
   total_monthly: number;
-  network_modeled?: boolean;
+  compute_modeled?: boolean;
+  memory_modeled?: boolean;
   database_modeled?: boolean;
+  storage_modeled?: boolean;
+  network_modeled?: boolean;
+  unmodeled_reasons?: Record<string, string>;
 }
 
 export interface ClassifiedAssumption {
@@ -427,6 +431,10 @@ export interface EconomicEstimate {
   monthly: number;
   annual: number;
   currency: string;
+  calculation_completeness?: "COMPLETE" | "PARTIAL" | "INVALID";
+  modeled_components?: string[];
+  unmodeled_components?: string[];
+  unmodeled_reasons?: Record<string, string>;
   breakdown: CostBreakdown;
   formulas: Record<string, string>;
   assumptions_classified: ClassifiedAssumption[];
@@ -441,6 +449,11 @@ export interface EconomicComparison {
   absolute_difference: number;
   relative_difference_pct: number;
   currency: string;
+  baseline_completeness?: "COMPLETE" | "PARTIAL" | "INVALID";
+  proposed_completeness?: "COMPLETE" | "PARTIAL" | "INVALID";
+  comparison_completeness?: "COMPLETE" | "PARTIAL";
+  common_modeled_components?: string[];
+  unmodeled_components?: string[];
   baseline_breakdown: CostBreakdown;
   proposed_breakdown: CostBreakdown;
   explanation: string;
