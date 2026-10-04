@@ -3,12 +3,14 @@ Coodara AI Chat application service.
 
 Grounds conversational queries in Coodara AST, Architecture Snapshots,
 structured Graph Calculations, and persistent V2 Architecture Memory.
+Manages persistent chat sessions and message history.
 """
 
 from __future__ import annotations
 
-import json
+import logging
 from collections.abc import Sequence
+from typing import Any
 
 from app.ai.chat.context_engine import ArchitectureContextEngine
 from app.ai.llm import (
@@ -17,6 +19,7 @@ from app.ai.llm import (
     LLMResponse,
 )
 from app.ai.memory.retriever import ArchitectureMemoryRetriever
+from app.models.chat import ChatMessage, ChatSession
 from app.repositories.analysis_repository import (
     AnalysisRepository,
 )
@@ -26,11 +29,14 @@ from app.repositories.architecture_memory_repository import (
 from app.repositories.architecture_repository import (
     ArchitectureRepository,
 )
+from app.repositories.chat_repository import ChatRepository
 from app.repositories.repository_repository import (
     RepositoryRepository,
 )
 from app.schemas.chat import ChatMessageHistoryItem
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 class ChatServiceError(Exception):
@@ -39,6 +45,10 @@ class ChatServiceError(Exception):
 
 class ChatRepositoryNotFoundError(ChatServiceError):
     """Repository does not exist or is not accessible."""
+
+
+class ChatSessionNotFoundError(ChatServiceError):
+    """Chat session does not exist or does not belong to organization."""
 
 
 class ChatService:
@@ -58,9 +68,88 @@ class ChatService:
         self.analysis_repository = AnalysisRepository(db)
         self.architecture_repository = ArchitectureRepository(db)
         self.memory_repository = ArchitectureMemoryRepository(db)
+        self.chat_repository = ChatRepository(db)
         self.llm_manager = llm_manager or LLMManager()
         self.retriever = retriever or ArchitectureMemoryRetriever()
         self.context_engine = context_engine or ArchitectureContextEngine()
+
+    async def list_sessions(
+        self,
+        *,
+        organization_id: int,
+        repository_id: int | None = None,
+        limit: int = 50,
+    ) -> Sequence[ChatSession]:
+        """
+        List persistent chat sessions for an organization.
+        """
+        return await self.chat_repository.list_sessions(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            limit=limit,
+        )
+
+    async def create_session(
+        self,
+        *,
+        organization_id: int,
+        repository_id: int | None = None,
+        user_id: int | None = None,
+        title: str = "Architecture Chat",
+    ) -> ChatSession:
+        """
+        Create a new persistent chat session.
+        """
+        return await self.chat_repository.create_session(
+            organization_id=organization_id,
+            repository_id=repository_id,
+            user_id=user_id,
+            title=title,
+        )
+
+    async def get_session(
+        self,
+        *,
+        session_id: int,
+        organization_id: int,
+    ) -> ChatSession:
+        """
+        Get a chat session verifying organization tenancy.
+        """
+        session = await self.chat_repository.get_session(
+            session_id=session_id,
+            organization_id=organization_id,
+        )
+        if session is None:
+            raise ChatSessionNotFoundError("Chat session not found.")
+        return session
+
+    async def list_session_messages(
+        self,
+        *,
+        session_id: int,
+        organization_id: int,
+        limit: int = 100,
+    ) -> Sequence[ChatMessage]:
+        """
+        List messages belonging to a chat session in chronological order.
+        """
+        session = await self.get_session(session_id=session_id, organization_id=organization_id)
+        return await self.chat_repository.list_messages(session_id=session.id, limit=limit)
+
+    async def delete_session(
+        self,
+        *,
+        session_id: int,
+        organization_id: int,
+    ) -> bool:
+        """
+        Delete a session and all its messages.
+        """
+        return await self.chat_repository.delete_session(
+            session_id=session_id,
+            organization_id=organization_id,
+        )
 
     async def chat(
         self,
@@ -68,10 +157,13 @@ class ChatService:
         organization_id: int,
         repository_id: int,
         message: str,
+        session_id: int | None = None,
+        user_id: int | None = None,
         conversation_history: Sequence[ChatMessageHistoryItem] | None = None,
     ) -> LLMResponse:
         """
         Answer a user question using repository architecture memory and intelligence.
+        Persists interaction to database session.
         """
         repository = (
             await self.repository_repository
@@ -85,6 +177,31 @@ class ChatService:
             raise ChatRepositoryNotFoundError(
                 "Repository not found.",
             )
+
+        # Resolve or create persistent session
+        session: ChatSession | None = None
+        session_id_val: int | None = None
+        try:
+            if session_id is not None:
+                session = await self.chat_repository.get_session(
+                    session_id=session_id,
+                    organization_id=organization_id,
+                )
+            if session is None:
+                session = await self.chat_repository.get_or_create_default_session(
+                    organization_id=organization_id,
+                    repository_id=repository_id,
+                    user_id=user_id,
+                )
+            if session is not None and hasattr(session, "id") and isinstance(session.id, int):
+                session_id_val = session.id
+                await self.chat_repository.add_message(
+                    session_id=session_id_val,
+                    role="user",
+                    content=message,
+                )
+        except Exception as sess_exc:
+            logger.warning("Failed to record chat session user message: %s", sess_exc)
 
         # 1. Retrieve latest completed analysis job & result
         analysis_jobs = await self.analysis_repository.get_by_repository(
@@ -100,6 +217,34 @@ class ChatService:
 
         # 2. Retrieve latest architecture snapshot
         snapshot = await self.architecture_repository.get_latest_by_repository(repository_id=repository_id)
+
+        # Explicit Unanalyzed Repository State (Zero Hallucination Invariant)
+        if latest_res is None and snapshot is None:
+            content = (
+                f"⚠️ **{repository.name} has not completed an architecture analysis yet.**\n\n"
+                "Coodara grounds all architecture reasoning strictly in AST code models, dependency graphs, "
+                "and architecture snapshots to prevent hallucination. "
+                "Please run an analysis on this repository to enable architecture chat, coupling detection, "
+                "and refactoring impact simulations."
+            )
+            response = LLMResponse(
+                content=content,
+                model="coodara-grounded-gate",
+                confidence="UNAVAILABLE",
+                session_id=session_id_val,
+            )
+            if session_id_val is not None:
+                try:
+                    await self.chat_repository.add_message(
+                        session_id=session_id_val,
+                        role="assistant",
+                        content=content,
+                        model=response.model,
+                        confidence="UNAVAILABLE",
+                    )
+                except Exception as save_exc:
+                    logger.warning("Failed to persist assistant unanalyzed message: %s", save_exc)
+            return response
 
         # 3. Retrieve persistent V2 Architecture Memory & Evolution Events
         memory = await self.memory_repository.get_by_repository(repository_id=repository_id)
@@ -144,21 +289,87 @@ class ChatService:
 
         llm_messages.append(LLMMessage(role="user", content=message))
 
-        return await self.llm_manager.generate(
+        raw_response = await self.llm_manager.generate(
             messages=llm_messages,
             structured_context=structured_ctx,
         )
+
+        sr_dict = None
+        if raw_response.structured_reasoning:
+            sr_dict = (
+                raw_response.structured_reasoning.model_dump()
+                if hasattr(raw_response.structured_reasoning, "model_dump")
+                else (
+                    raw_response.structured_reasoning
+                    if isinstance(raw_response.structured_reasoning, dict)
+                    else None
+                )
+            )
+
+        resp = LLMResponse(
+            content=raw_response.content,
+            model=raw_response.model,
+            usage=raw_response.usage,
+            latency_ms=raw_response.latency_ms,
+            finish_reason=raw_response.finish_reason,
+            structured_reasoning=raw_response.structured_reasoning,
+            session_id=session_id_val,
+            confidence=raw_response.confidence or "HIGH",
+        )
+
+        if session_id_val is not None:
+            try:
+                await self.chat_repository.add_message(
+                    session_id=session_id_val,
+                    role="assistant",
+                    content=raw_response.content,
+                    model=raw_response.model,
+                    confidence=resp.confidence,
+                    structured_reasoning=sr_dict,
+                )
+            except Exception as save_exc:
+                logger.warning("Failed to persist assistant message: %s", save_exc)
+
+        return resp
 
     async def chat_organization(
         self,
         *,
         organization_id: int,
         message: str,
+        session_id: int | None = None,
+        user_id: int | None = None,
         conversation_history: Sequence[ChatMessageHistoryItem] | None = None,
     ) -> LLMResponse:
         """
         Answer a user question across the entire organization's repositories and architecture.
+        Persists interaction to database session.
         """
+        # Resolve or create persistent session
+        session: ChatSession | None = None
+        session_id_val: int | None = None
+        try:
+            if session_id is not None:
+                session = await self.chat_repository.get_session(
+                    session_id=session_id,
+                    organization_id=organization_id,
+                )
+            if session is None:
+                session = await self.chat_repository.get_or_create_default_session(
+                    organization_id=organization_id,
+                    repository_id=None,
+                    user_id=user_id,
+                )
+            if session is not None and hasattr(session, "id") and isinstance(session.id, int):
+                session_id_val = session.id
+                await self.chat_repository.add_message(
+                    session_id=session_id_val,
+                    role="user",
+                    content=message,
+                )
+        except Exception as sess_exc:
+            logger.warning("Failed to record chat session user message: %s", sess_exc)
+
         repos = await self.repository_repository.list_by_organization(
             organization_id=organization_id,
             offset=0,
@@ -224,6 +435,31 @@ class ChatService:
 
         llm_messages.append(LLMMessage(role="user", content=message))
 
-        return await self.llm_manager.generate(
+        raw_response = await self.llm_manager.generate(
             messages=llm_messages,
         )
+
+        resp = LLMResponse(
+            content=raw_response.content,
+            model=raw_response.model,
+            usage=raw_response.usage,
+            latency_ms=raw_response.latency_ms,
+            finish_reason=raw_response.finish_reason,
+            structured_reasoning=raw_response.structured_reasoning,
+            session_id=session_id_val,
+            confidence=raw_response.confidence or "HIGH",
+        )
+
+        if session_id_val is not None:
+            try:
+                await self.chat_repository.add_message(
+                    session_id=session_id_val,
+                    role="assistant",
+                    content=raw_response.content,
+                    model=raw_response.model,
+                    confidence=resp.confidence,
+                )
+            except Exception as save_exc:
+                logger.warning("Failed to persist assistant message: %s", save_exc)
+
+        return resp

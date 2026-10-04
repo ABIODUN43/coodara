@@ -4,6 +4,8 @@ API schemas for Coodara AI Chat.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -20,6 +22,10 @@ class ChatMessageRequest(BaseModel):
     message: str = Field(
         min_length=1,
         max_length=8000,
+    )
+    session_id: int | None = Field(
+        default=None,
+        description="Optional persistent chat session identifier",
     )
     conversation_history: list[ChatMessageHistoryItem] = Field(
         default_factory=list,
@@ -122,3 +128,43 @@ class ChatMessageResponse(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     confidence: str = Field(default="HIGH")
     structured_reasoning: StructuredReasoningResult | None = None
+    session_id: int | None = None
+
+
+class ChatSessionResponse(BaseModel):
+    """Metadata for a persistent chat session."""
+
+    id: int
+    organization_id: int
+    repository_id: int | None = None
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+
+class ChatSessionListResponse(BaseModel):
+    """List of chat sessions."""
+
+    items: list[ChatSessionResponse]
+    total: int
+
+
+class ChatMessageItemResponse(BaseModel):
+    """Persistent chat message item."""
+
+    id: int
+    session_id: int
+    role: str
+    content: str
+    model: str | None = None
+    confidence: str | None = None
+    structured_reasoning: StructuredReasoningResult | None = None
+    created_at: datetime
+
+
+class ChatMessageListResponse(BaseModel):
+    """Chronological messages in a persistent chat session."""
+
+    session_id: int
+    items: list[ChatMessageItemResponse]

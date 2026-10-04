@@ -40,6 +40,10 @@ from app.models.memory import (
     ComponentStatus,
     MemoryType,
 )
+from app.models.chat import (
+    ChatMessage,
+    ChatSession,
+)
 from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember
 from app.models.organization_settings import OrganizationSettings
@@ -61,6 +65,8 @@ __all__ = [
     "ArchitectureScore",
     "ArchitectureSnapshot",
     "ArchitectureTechnologyMemory",
+    "ChatMessage",
+    "ChatSession",
     "ComponentStatus",
     "CostScenario",
     "DecisionRecord",

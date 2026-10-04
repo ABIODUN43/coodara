@@ -13,14 +13,23 @@ import {
   Copy,
   Check,
   Cpu,
+  Plus,
+  Play,
+  AlertCircle,
 } from "lucide-react";
 import { useProject } from "@/context/ProjectContext";
 import { listRepositories } from "@/api/repositories";
+import { startAnalysis } from "@/api/analyses";
+import { useDashboardOverview } from "@/hooks/useDashboardOverview";
 import {
   sendOrganizationChatMessage,
   sendRepositoryChatMessage,
+  listChatSessions,
+  createChatSession,
+  getSessionMessages,
   type ChatMessageHistoryItem,
   type StructuredReasoningResult,
+  type ChatSessionResponse,
 } from "@/api/chat";
 import type { Repository } from "@/types/repository";
 import { StructuredReasoningView } from "@/components/chat/StructuredReasoningView";
@@ -61,13 +70,20 @@ const SUGGESTED_PROMPTS = [
 export function AIAssistantPage() {
   const location = useLocation();
   const { activeProject, loading: orgsLoading } = useProject();
+  const { repoData, refreshOverview } = useDashboardOverview();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState<number | "all">("all");
+
+  const [sessions, setSessions] = useState<ChatSessionResponse[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [sending, setSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [triggeringAnalysis, setTriggeringAnalysis] = useState(false);
+  const [analysisTriggerMessage, setAnalysisTriggerMessage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -82,6 +98,7 @@ export function AIAssistantPage() {
     }
   }, [location.state]);
 
+  // Load repositories for active project
   useEffect(() => {
     let cancelled = false;
 
@@ -103,24 +120,126 @@ export function AIAssistantPage() {
     };
   }, [activeProject?.id]);
 
-  // Initial welcome message
+  // Load persistent sessions and active conversation history on scope change
   useEffect(() => {
-    if (activeProject && messages.length === 0) {
+    if (!activeProject?.id) return;
+    const orgId = activeProject.id;
+    const orgName = activeProject.name;
+    let active = true;
+
+    async function loadSessionsAndMessages() {
+      setLoadingHistory(true);
+      try {
+        const repoFilter = selectedRepoId === "all" ? undefined : selectedRepoId;
+        const res = await listChatSessions(orgId, repoFilter);
+        if (!active) return;
+
+        setSessions(res.items);
+
+        if (res.items.length > 0) {
+          const current = res.items[0];
+          setActiveSessionId(current.id);
+          const msgRes = await getSessionMessages(orgId, current.id);
+          if (!active) return;
+
+          if (msgRes.items.length > 0) {
+            setMessages(
+              msgRes.items.map((m) => ({
+                id: String(m.id),
+                role: m.role,
+                content: m.content,
+                model: m.model ?? undefined,
+                confidence: m.confidence ?? undefined,
+                structured_reasoning: m.structured_reasoning ?? undefined,
+                timestamp: new Date(m.created_at).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              }))
+            );
+          } else {
+            setWelcomeMessage();
+          }
+        } else {
+          setActiveSessionId(null);
+          setWelcomeMessage();
+        }
+      } catch {
+        if (active) {
+          setWelcomeMessage();
+        }
+      } finally {
+        if (active) {
+          setLoadingHistory(false);
+        }
+      }
+    }
+
+    function setWelcomeMessage() {
       setMessages([
         {
           id: "welcome",
           role: "assistant",
-          content: `Hello! I am **Coodara AI**, your dedicated software architecture intelligence assistant for **${activeProject.name}**.\n\nI have real-time access to your repository AST code models, dependency graph topology ($G=(V,E)$), and persistent **V2 Architecture Memory**.\n\nSelect a specific repository or ask about your organization's entire portfolio below!`,
+          content: `Hello! I am **Coodara AI**, your dedicated software architecture intelligence assistant for **${orgName}**.\n\nI have real-time access to your repository AST code models, dependency graph topology ($G=(V,E)$), and persistent **V2 Architecture Memory**.\n\nSelect a specific repository or ask about your organization's entire portfolio below!`,
           model: "coodara-architecture-engine",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
     }
-  }, [activeProject, messages.length]);
+
+    void loadSessionsAndMessages();
+    return () => {
+      active = false;
+    };
+  }, [activeProject?.id, activeProject?.name, selectedRepoId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  // Check if selected repository has completed analysis
+  const selectedRepoObj = repos.find((r) => r.id === selectedRepoId);
+  const selectedRepoAnalysisData = selectedRepoId !== "all"
+    ? repoData?.find((rd) => rd.repo.id === selectedRepoId)
+    : null;
+  const isRepoAnalyzed = selectedRepoId === "all" || Boolean(selectedRepoAnalysisData?.architecture || selectedRepoAnalysisData?.result);
+
+  async function handleStartNewSession() {
+    if (!activeProject?.id) return;
+    try {
+      const repoFilter = selectedRepoId === "all" ? undefined : selectedRepoId;
+      const title = selectedRepoObj ? `${selectedRepoObj.name} Chat` : "Organization Architecture Chat";
+      const newSession = await createChatSession(activeProject.id, repoFilter, title);
+      setActiveSessionId(newSession.id);
+      setSessions((prev) => [newSession, ...prev]);
+      setMessages([
+        {
+          id: "new-session",
+          role: "assistant",
+          content: `Started a new architecture conversation thread for **${selectedRepoObj ? selectedRepoObj.name : activeProject.name}**.\n\nAsk any question regarding service coupling, dependency boundaries, or refactoring impact simulations.`,
+          model: "coodara-architecture-engine",
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    } catch (err) {
+      console.error("Failed to create new session:", err);
+    }
+  }
+
+  async function handleTriggerAnalysis() {
+    if (!activeProject?.id || selectedRepoId === "all") return;
+    setTriggeringAnalysis(true);
+    setAnalysisTriggerMessage(null);
+    try {
+      await startAnalysis(activeProject.id, selectedRepoId);
+      setAnalysisTriggerMessage("Analysis triggered successfully! Coodara is now parsing AST models & dependencies.");
+      await refreshOverview();
+    } catch (err) {
+      setAnalysisTriggerMessage(`Failed to trigger analysis: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setTriggeringAnalysis(false);
+    }
+  }
 
   async function handleSend(customPrompt?: string) {
     const text = customPrompt || inputValue.trim();
@@ -146,9 +265,24 @@ export function AIAssistantPage() {
     try {
       let response;
       if (selectedRepoId === "all") {
-        response = await sendOrganizationChatMessage(activeProject.id, text, historyPayload);
+        response = await sendOrganizationChatMessage(
+          activeProject.id,
+          text,
+          historyPayload,
+          activeSessionId ?? undefined
+        );
       } else {
-        response = await sendRepositoryChatMessage(activeProject.id, selectedRepoId, text, historyPayload);
+        response = await sendRepositoryChatMessage(
+          activeProject.id,
+          selectedRepoId,
+          text,
+          historyPayload,
+          activeSessionId ?? undefined
+        );
+      }
+
+      if (response.session_id && response.session_id !== activeSessionId) {
+        setActiveSessionId(response.session_id);
       }
 
       const assistantMsg: Message = {
@@ -203,8 +337,6 @@ export function AIAssistantPage() {
     );
   }
 
-  const selectedRepoObj = repos.find((r) => r.id === selectedRepoId);
-
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col bg-[var(--cd-bg)] px-4 pb-4 pt-3 sm:px-6">
       {/* Header */}
@@ -220,7 +352,7 @@ export function AIAssistantPage() {
               </h1>
               <span className="flex items-center gap-1 rounded-full bg-[var(--cd-accent-soft)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--cd-accent)]">
                 <Sparkles className="h-2.5 w-2.5" />
-                Live Architecture Reasoning
+                Persistent Multi-Turn Intelligence
               </span>
             </div>
             <p className="text-[11.5px] text-[var(--cd-ink-faint)]">
@@ -229,7 +361,7 @@ export function AIAssistantPage() {
           </div>
         </div>
 
-        {/* Scope selector */}
+        {/* Scope and session controls */}
         <div className="flex items-center gap-2">
           <span className="text-[11.5px] font-medium text-[var(--cd-ink-soft)]">Scope:</span>
           <div className="relative">
@@ -250,31 +382,118 @@ export function AIAssistantPage() {
             </select>
           </div>
 
+          {sessions.length > 0 && (
+            <div className="relative">
+              <select
+                value={activeSessionId ?? ""}
+                onChange={async (e) => {
+                  const sId = Number(e.target.value);
+                  if (!sId || !activeProject?.id) return;
+                  setActiveSessionId(sId);
+                  try {
+                    const msgRes = await getSessionMessages(activeProject.id, sId);
+                    if (msgRes.items.length > 0) {
+                      setMessages(
+                        msgRes.items.map((m) => ({
+                          id: String(m.id),
+                          role: m.role,
+                          content: m.content,
+                          model: m.model ?? undefined,
+                          confidence: m.confidence ?? undefined,
+                          structured_reasoning: m.structured_reasoning ?? undefined,
+                          timestamp: new Date(m.created_at).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }),
+                        }))
+                      );
+                    }
+                  } catch {
+                    // ignore
+                  }
+                }}
+                className="cursor-pointer appearance-none rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] py-1.5 pl-2.5 pr-7 text-[11.5px] font-medium text-[var(--cd-ink)] shadow-sm outline-none hover:bg-[var(--cd-sunken)] focus:border-[var(--cd-accent)]"
+                title="Select Saved Conversation Thread"
+              >
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    💬 {s.title.length > 25 ? s.title.slice(0, 25) + "..." : s.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
-            onClick={() => setMessages([])}
-            className="cursor-pointer rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1.5 text-[11.5px] font-medium text-[var(--cd-ink-soft)] hover:bg-[var(--cd-sunken)]"
-            title="Reset Chat"
+            onClick={() => void handleStartNewSession()}
+            className="cursor-pointer inline-flex items-center gap-1 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1.5 text-[11.5px] font-medium text-[var(--cd-ink)] hover:bg-[var(--cd-sunken)]"
+            title="Start New Conversation Thread"
           >
-            Clear
+            <Plus className="h-3.5 w-3.5 text-[var(--cd-accent)]" />
+            New Thread
           </button>
         </div>
       </div>
 
+      {/* Unanalyzed Repository Banner */}
+      {!isRepoAnalyzed && selectedRepoObj && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[var(--cd-warn-soft)] bg-[var(--cd-warn-soft)]/20 px-3.5 py-2.5 text-[12px] text-[var(--cd-warn)]">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              <strong>{selectedRepoObj.name} has not completed an architecture analysis yet.</strong> Architecture reasoning requires AST code models and dependency graphs to avoid hallucination.
+            </span>
+          </div>
+          <button
+            onClick={() => void handleTriggerAnalysis()}
+            disabled={triggeringAnalysis}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-md bg-[var(--cd-accent)] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors disabled:opacity-50"
+          >
+            {triggeringAnalysis ? (
+              <RefreshCw className="h-3 w-3 animate-spin" />
+            ) : (
+              <Play className="h-3 w-3" />
+            )}
+            Run Analysis Now
+          </button>
+        </div>
+      )}
+
+      {analysisTriggerMessage && (
+        <div className="mb-3 rounded-lg border border-[var(--cd-border-soft)] bg-[var(--cd-surface)] px-3 py-2 text-[11.5px] text-[var(--cd-ink-soft)]">
+          {analysisTriggerMessage}
+        </div>
+      )}
+
       {/* Scope Info Pill */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--cd-surface)] px-3 py-2 text-[11.5px] text-[var(--cd-ink-soft)] border border-[var(--cd-border-soft)]">
-        <span className="font-semibold text-[var(--cd-ink)] flex items-center gap-1">
-          {selectedRepoId === "all" ? <Building2 className="h-3.5 w-3.5" /> : <GitBranch className="h-3.5 w-3.5" />}
-          Context:
-        </span>
-        <span>
-          {selectedRepoId === "all"
-            ? `${activeProject.name} — ${repos.length} repositories registered`
-            : `${selectedRepoObj?.full_name || selectedRepoObj?.name} (${selectedRepoObj?.primary_language || "Codebase"})`}
-        </span>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--cd-surface)] px-3 py-2 text-[11.5px] text-[var(--cd-ink-soft)] border border-[var(--cd-border-soft)]">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-[var(--cd-ink)] flex items-center gap-1">
+            {selectedRepoId === "all" ? <Building2 className="h-3.5 w-3.5" /> : <GitBranch className="h-3.5 w-3.5" />}
+            Context:
+          </span>
+          <span>
+            {selectedRepoId === "all"
+              ? `${activeProject.name} — ${repos.length} repositories registered`
+              : `${selectedRepoObj?.full_name || selectedRepoObj?.name} (${selectedRepoObj?.primary_language || "Codebase"})`}
+          </span>
+        </div>
+        {activeSessionId && (
+          <span className="font-mono text-[10.5px] text-[var(--cd-ink-faint)]">
+            Thread #{activeSessionId}
+          </span>
+        )}
       </div>
 
       {/* Chat Messages Container */}
       <div className="flex-1 overflow-y-auto rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-4 space-y-4">
+        {loadingHistory && (
+          <div className="flex items-center justify-center p-4 text-[12px] text-[var(--cd-ink-faint)] gap-2">
+            <RefreshCw className="h-3.5 w-3.5 animate-spin text-[var(--cd-accent)]" />
+            Restoring persistent conversation history...
+          </div>
+        )}
+
         {messages.map((m) => {
           const isUser = m.role === "user";
           return (
@@ -347,7 +566,7 @@ export function AIAssistantPage() {
             </div>
             <div className="rounded-2xl rounded-tl-none border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)] px-4 py-2.5 text-[12px] text-[var(--cd-ink-soft)] flex items-center gap-2">
               <RefreshCw className="h-3.5 w-3.5 animate-spin text-[var(--cd-accent)]" />
-              Analyzing repository topology & calculating architectural metrics...
+              Evaluating codebase AST topology & calculating architectural metrics...
             </div>
           </div>
         )}

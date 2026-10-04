@@ -63,6 +63,8 @@ class LLMResponse:
     latency_ms: float = 0.0
     finish_reason: str | None = None
     structured_reasoning: dict[str, Any] | None = None
+    session_id: int | None = None
+    confidence: str | None = "HIGH"
 
 
 class LLMProvider(ABC):

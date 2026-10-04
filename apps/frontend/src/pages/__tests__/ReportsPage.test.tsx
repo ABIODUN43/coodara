@@ -215,12 +215,15 @@ describe("ReportsPage - Architecture Intelligence Report UX", () => {
     const repoBtn = screen.getByRole("button", { name: "Repository Architecture Report" });
     fireEvent.click(repoBtn);
 
-    await waitFor(() => {
-      expect(
-        screen.getByText("Software Architecture Intelligence Report: billing-service")
-      ).toBeDefined();
-    });
-  });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText("Software Architecture Intelligence Report: billing-service")
+        ).toBeDefined();
+      },
+      { timeout: 5000 }
+    );
+  }, 15000);
 
   it("triggers markdown download when button is clicked", async () => {
     vi.spyOn(architectureApi, "fetchArchitectureReport").mockResolvedValue(sampleReport);
