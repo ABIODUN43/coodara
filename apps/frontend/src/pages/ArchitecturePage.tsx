@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
-import { RefreshCw, Sparkles, Code2, Network, Flame, HelpCircle, GitCompare, Compass } from "lucide-react";
+import { RefreshCw, Sparkles, Code2, Network, Flame, HelpCircle, GitCompare, Compass, GitBranch } from "lucide-react";
 import { getArchitecture, getArchitectureInsights } from "@/api/architecture";
 import type { ArchitectureResponse, ArchitectureIssue } from "@/types/architecture";
+import { useProject } from "@/context/ProjectContext";
+import { useDashboardOverview } from "@/hooks/useDashboardOverview";
 import { ArchitectureSummary } from "@/components/architecture/ArchitectureSummary";
 import { ArchitectureGraph } from "@/components/architecture/ArchitectureGraph";
 import { ComponentDetails } from "@/components/architecture/ComponentDetails";
@@ -14,9 +16,25 @@ import { ArchitectureCommitDiffModal } from "@/components/architecture/Architect
 import { ArchitecturalImpactModal } from "@/components/architecture/ArchitecturalImpactModal";
 
 export function ArchitecturePage() {
-  const { orgId, repoId } = useParams<{ orgId: string; repoId: string }>();
+  const { orgId: routeOrgId, repoId: routeRepoId } = useParams<{ orgId?: string; repoId?: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { activeProject } = useProject();
+  const { repos, loading: reposLoading } = useDashboardOverview();
+
+  // Resolve canonical orgId and repoId with robust fallback hierarchy
+  const effectiveOrgId =
+    routeOrgId ||
+    searchParams.get("orgId") ||
+    (activeProject?.id ? String(activeProject.id) : "");
+
+  const effectiveRepoId =
+    routeRepoId ||
+    searchParams.get("repoId") ||
+    (repos.length > 0 ? String(repos[0].id) : "");
+
+  const selectedRepo = repos.find((r) => String(r.id) === effectiveRepoId) || repos[0];
+  const repoDisplayName = selectedRepo?.name || effectiveRepoId || "Repository";
 
   const [architecture, setArchitecture] = useState<ArchitectureResponse | null>(null);
   const [issues, setIssues] = useState<ArchitectureIssue[]>([]);
@@ -44,13 +62,16 @@ export function ArchitecturePage() {
   }, [searchParams]);
 
   const load = useCallback(() => {
-    if (!orgId || !repoId) return;
+    if (!effectiveOrgId || !effectiveRepoId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 
     Promise.all([
-      getArchitecture(orgId, repoId),
-      getArchitectureInsights(orgId, repoId).catch(() => ({ items: [] })),
+      getArchitecture(effectiveOrgId, effectiveRepoId),
+      getArchitectureInsights(effectiveOrgId, effectiveRepoId).catch(() => ({ items: [] })),
     ])
       .then(([archData, insightsData]) => {
         setArchitecture(archData);
@@ -58,28 +79,61 @@ export function ArchitecturePage() {
       })
       .catch(() => setError("Couldn't load architecture for this repository."))
       .finally(() => setLoading(false));
-  }, [orgId, repoId]);
+  }, [effectiveOrgId, effectiveRepoId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  if (!repoId || !orgId) return null;
+  const handleSelectRepo = (newRepoId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("repoId", newRepoId);
+    if (effectiveOrgId) next.set("orgId", effectiveOrgId);
+    setSearchParams(next);
+  };
+
+  if (reposLoading && !architecture) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center rounded-xl p-8 text-center text-[13px] text-[var(--cd-ink-soft)]">
+        <RefreshCw className="h-6 w-6 animate-spin text-[var(--cd-accent)] mb-3" />
+        <div>Resolving repository architecture intelligence...</div>
+      </div>
+    );
+  }
+
+  if (!reposLoading && repos.length === 0) {
+    return (
+      <div className="rounded-xl border border-[var(--cd-border)] bg-[var(--cd-surface)] p-12 text-center text-[13px] text-[var(--cd-ink-soft)] space-y-3 m-6">
+        <div className="text-base font-bold text-[var(--cd-ink)]">No Repositories Available</div>
+        <p className="max-w-md mx-auto">
+          Please add and analyze a repository to view its macro architectural topology, dependency contracts, and blast radius simulations.
+        </p>
+        <Link
+          to="/repositories"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-4 py-2 text-[12px] font-semibold text-white shadow-xs"
+        >
+          Go to Repositories
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pb-12 pt-4 sm:px-6">
       {/* Top Breadcrumbs & Value Proposition Tag */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px]">
         <div className="flex items-center gap-1.5 text-[var(--cd-ink-faint)]">
-          <Link to="/dashboard/organizations" className="hover:text-[var(--cd-ink)]">
-            Organizations
+          <Link to="/dashboard" className="hover:text-[var(--cd-ink)]">
+            Dashboard
           </Link>
           <span>/</span>
-          <Link to={`/dashboard/organizations/${orgId}`} className="hover:text-[var(--cd-ink)]">
+          <Link to="/repositories" className="hover:text-[var(--cd-ink)]">
             Repositories
           </Link>
           <span>/</span>
-          <span className="font-medium text-[var(--cd-ink-soft)]">Architecture Intelligence</span>
+          <span className="font-medium text-[var(--cd-ink-soft)]">{repoDisplayName}</span>
+          <span>/</span>
+          <span className="font-medium text-[var(--cd-ink)]">Architecture Intelligence</span>
         </div>
 
         {/* Why Coodara vs Docs button */}
@@ -113,13 +167,25 @@ export function ArchitecturePage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden text-right md:block">
-            <span className="text-[13px] font-semibold tracking-tight text-[var(--cd-ink)]">
-              Active Graph G=(V,E)
-            </span>
-            <div className="mt-0.5 h-0.5 w-16 ml-auto rounded-full bg-[var(--cd-accent)]" />
-          </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Repository Selector Dropdown */}
+          {repos.length > 0 && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-[var(--cd-border)] bg-[var(--cd-bg)] px-2.5 py-1 text-[12px]">
+              <GitBranch className="h-3.5 w-3.5 text-[var(--cd-ink-faint)]" />
+              <select
+                value={effectiveRepoId}
+                onChange={(e) => handleSelectRepo(e.target.value)}
+                className="bg-transparent font-medium text-[var(--cd-ink)] focus:outline-none cursor-pointer"
+              >
+                {repos.map((r) => (
+                  <option key={r.id} value={String(r.id)}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsImpactModalOpen(true)}
@@ -143,7 +209,7 @@ export function ArchitecturePage() {
               Refresh
             </button>
             <button
-              onClick={() => navigate(`/dashboard/organizations/${orgId}/chat`)}
+              onClick={() => navigate('/chat')}
               className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-1.5 text-[12px] font-medium text-white shadow-xs hover:bg-[var(--cd-accent-hover)] transition-colors"
             >
               <Sparkles className="h-3.5 w-3.5" />
@@ -233,16 +299,16 @@ export function ArchitecturePage() {
         <>
           {activeTab === "studio" ? (
             <ArchitectureCodeStudio
-              orgId={orgId}
-              repositoryId={repoId}
-              onNavigateToChat={() => navigate(`/dashboard/organizations/${orgId}/chat`)}
+              orgId={effectiveOrgId}
+              repositoryId={effectiveRepoId}
+              onNavigateToChat={() => navigate('/chat')}
             />
           ) : (
             architecture && (
               <>
                 <ArchitectureSummary
                   summary={architecture.summary}
-                  repoName={repoId}
+                  repoName={repoDisplayName}
                   graph={architecture.graph}
                   issues={issues}
                   onNavigateToStudio={() => setActiveTab("studio")}
@@ -261,11 +327,11 @@ export function ArchitecturePage() {
                       </h3>
                     </div>
                     <ComponentDetails
-                      orgId={orgId}
-                      repositoryId={repoId}
+                      orgId={effectiveOrgId}
+                      repositoryId={effectiveRepoId}
                       componentId={selectedNodeId}
                       onSelectComponent={setSelectedNodeId}
-                      onAskAi={() => navigate(`/dashboard/organizations/${orgId}/chat`)}
+                      onAskAi={() => navigate('/chat')}
                     />
                   </div>
                 </div>
@@ -308,16 +374,16 @@ export function ArchitecturePage() {
       <ArchitectureCommitDiffModal
         isOpen={isDiffModalOpen}
         onClose={() => setIsDiffModalOpen(false)}
-        orgId={orgId}
-        repositoryId={repoId}
+        orgId={effectiveOrgId}
+        repositoryId={effectiveRepoId}
       />
 
       {/* Architectural Impact & Consequence Simulation (Pillar 6) Modal */}
       <ArchitecturalImpactModal
         isOpen={isImpactModalOpen}
         onClose={() => setIsImpactModalOpen(false)}
-        orgId={orgId}
-        repositoryId={repoId}
+        orgId={effectiveOrgId}
+        repositoryId={effectiveRepoId}
         initialComponentId={selectedNodeId || undefined}
       />
     </div>

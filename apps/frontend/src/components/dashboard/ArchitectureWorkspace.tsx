@@ -1127,7 +1127,7 @@ export function ArchitectureWorkspace({
               onClick={() => {
                 if (activeRepo) {
                   navigate(
-                    `/dashboard/organizations/${organizationId}/repositories/${activeRepo.id}/architecture?tab=studio${
+                    `/architecture?repoId=${activeRepo.id}&orgId=${organizationId}&tab=studio${
                       selectedNode ? `&component=${encodeURIComponent(selectedNode.id)}` : ""
                     }`,
                   );
@@ -1144,7 +1144,7 @@ export function ArchitectureWorkspace({
               className="w-full justify-between cursor-pointer"
               onClick={() => {
                 navigate(
-                  `/dashboard/chat?query=${encodeURIComponent(
+                  `/chat?query=${encodeURIComponent(
                     selectedNode
                       ? `Explain the architecture and dependencies of ${selectedNode.name}`
                       : `Explain the macro architecture of ${activeRepo?.name || "this repository"}`,

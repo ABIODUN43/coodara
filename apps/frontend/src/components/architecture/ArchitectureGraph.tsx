@@ -439,8 +439,11 @@ export function ArchitectureGraph({
       const colors = getNodeColor(node.type);
       const shape = getNodeShape(node.type);
       const iconSvg = getNodeSvgIcon(node.type);
-      const width = shape === "diamond" ? 156 : shape === "ellipse" ? 150 : 144;
-      const height = shape === "diamond" ? 52 : shape === "ellipse" ? 46 : 44;
+      const label = node.name || node.id;
+      const labelLen = label.length;
+      const calculatedWidth = Math.max(160, Math.min(240, labelLen * 8 + 48));
+      const width = shape === "diamond" ? Math.max(calculatedWidth, 175) : calculatedWidth;
+      const height = shape === "diamond" ? 54 : shape === "ellipse" ? 50 : 48;
 
       return {
         data: {
@@ -557,10 +560,10 @@ export function ArchitectureGraph({
       }
     };
 
-    layoutNodeRow(tier1Nodes, 65, 3, 90);
-    layoutNodeRow(tier2Services, 185, 4, 90);
-    layoutNodeRow(tier2Storage, 310, 4, 90);
-    layoutNodeRow(tier3Nodes, 435, 3, 90);
+    layoutNodeRow(tier1Nodes, 70, 3, 135);
+    layoutNodeRow(tier2Services, 220, 4, 135);
+    layoutNodeRow(tier2Storage, 385, 4, 135);
+    layoutNodeRow(tier3Nodes, 550, 3, 135);
 
     cy.fit(undefined, 35);
     cy.center();
@@ -673,8 +676,11 @@ export function ArchitectureGraph({
               "border-color": "data(borderColor)",
               shape: "data(shape)" as any,
               label: "data(label)",
-              "font-size": 11.5,
+              "font-size": "11px",
               "font-weight": 700,
+              "text-wrap": "wrap" as any,
+              "text-max-width": "135px" as any,
+              "text-overflow-wrap": "anywhere" as any,
               "font-family": "Inter, -apple-system, system-ui, sans-serif",
               color: "#0F172A",
               "text-valign": "center",

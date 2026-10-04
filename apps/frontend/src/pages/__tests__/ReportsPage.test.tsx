@@ -248,4 +248,31 @@ describe("ReportsPage - Architecture Intelligence Report UX", () => {
 
     expect(downloadSpy).toHaveBeenCalledWith(1, 10, "billing-service");
   });
+
+  it("gracefully renders when backend report has undefined adrs and dependency_hotspots (Bug 5 regression)", async () => {
+    // Simulate legacy or incomplete backend payload where adrs and dependency_hotspots are undefined
+    const incompleteReport = {
+      ...sampleReport,
+      dependency_hotspots: undefined as any,
+      adrs: undefined as any,
+      technology_stack: undefined as any,
+    };
+    vi.spyOn(architectureApi, "fetchArchitectureReport").mockResolvedValue(incompleteReport as any);
+
+    render(
+      <MemoryRouter>
+        <ReportsPage />
+      </MemoryRouter>
+    );
+
+    // Should render successfully without throwing "Cannot read properties of undefined (reading 'length')"
+    await waitFor(() => {
+      expect(
+        screen.getByText("Software Architecture Intelligence Report: billing-service")
+      ).toBeDefined();
+    });
+
+    expect(screen.getByText(/8\. Architecture Decision Records \(ADRs\)/)).toBeDefined();
+    expect(screen.getByText(/5\. Dependency Hotspots & Boundary Violations/)).toBeDefined();
+  });
 });

@@ -175,6 +175,9 @@ export async function sendOrganizationChatMessage(
       message,
       session_id: sessionId ?? null,
       conversation_history: conversationHistory || [],
+    },
+    {
+      timeout: 60000,
     }
   );
   return response.data;
@@ -193,6 +196,9 @@ export async function sendRepositoryChatMessage(
       message,
       session_id: sessionId ?? null,
       conversation_history: conversationHistory || [],
+    },
+    {
+      timeout: 60000,
     }
   );
   return response.data;

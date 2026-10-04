@@ -1,7 +1,8 @@
-import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams, useSearchParams } from "react-router-dom";
 
 import { AppLayout } from "@/components/common/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { RouteErrorBoundary } from "@/components/common/RouteErrorBoundary";
 
 import { LandingPage } from "@/pages/LandingPage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -33,9 +34,24 @@ function LegacyRepoAnalysisRedirect() {
   return <Navigate to="/repositories" replace />;
 }
 
+/**
+ * Redirect helper for legacy /dashboard/organizations/:orgId/repositories/:repoId/architecture paths
+ * Preserves orgId, repoId, and query parameters (such as ?tab=studio&component=...)
+ */
+function LegacyArchitectureRedirect() {
+  const { orgId, repoId } = useParams<{ orgId?: string; repoId?: string }>();
+  const [searchParams] = useSearchParams();
+  const query = new URLSearchParams(searchParams);
+  if (orgId && !query.has("orgId")) query.set("orgId", orgId);
+  if (repoId && !query.has("repoId")) query.set("repoId", repoId);
+  const searchStr = query.toString() ? `?${query.toString()}` : "";
+  return <Navigate to={`/architecture${searchStr}`} replace />;
+}
+
 export const router = createBrowserRouter([
   {
     element: <AppLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       // Surface 15: Public / Auth / Onboarding
       {
@@ -230,7 +246,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "/dashboard/organizations/:orgId/repositories/:repoId/architecture",
-            element: <Navigate to="/architecture" replace />,
+            element: <LegacyArchitectureRedirect />,
           },
           {
             path: "/dashboard/organizations/:orgId/repositories/:repoId/memory",

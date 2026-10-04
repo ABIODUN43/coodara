@@ -369,9 +369,11 @@ class ArchitectureReportService:
             components=component_items,
             diagram=diagram,
             dependencies=dependency_hotspots,
+            dependency_hotspots=dependency_hotspots,
             findings=finding_items,
             recommendations=recommendation_items,
             decision_records=scanned_adrs,
+            adrs=scanned_adrs,
             methodology=methodology,
             markdown_content=markdown_text,
         )

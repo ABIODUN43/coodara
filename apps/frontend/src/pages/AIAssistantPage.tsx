@@ -296,15 +296,89 @@ export function AIAssistantPage() {
 
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: unknown) {
-      const errorMsg: Message = {
-        id: String(Date.now() + 1),
-        role: "assistant",
-        content: `⚠️ Failed to get a response from Coodara AI (${err instanceof Error ? err.message : "Network error"}). Please try again.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      // 1. Attempt reconciliation: check if the backend completed and persisted the response
+      let reconciled = false;
+      if (activeProject?.id) {
+        try {
+          await new Promise((r) => setTimeout(r, 2000));
+          const sessionList = await listChatSessions(
+            activeProject.id,
+            selectedRepoId === "all" ? undefined : selectedRepoId
+          );
+          const targetSessionId = activeSessionId || sessionList.items[0]?.id;
+          if (targetSessionId) {
+            const msgRes = await getSessionMessages(activeProject.id, targetSessionId);
+            if (msgRes.items.length > 0) {
+              const lastItem = msgRes.items[msgRes.items.length - 1];
+              if (lastItem.role === "assistant") {
+                setMessages(
+                  msgRes.items.map((m) => ({
+                    id: String(m.id),
+                    role: m.role,
+                    content: m.content,
+                    model: m.model ?? undefined,
+                    confidence: m.confidence ?? undefined,
+                    structured_reasoning: m.structured_reasoning ?? undefined,
+                    timestamp: new Date(m.created_at).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }),
+                  }))
+                );
+                reconciled = true;
+              }
+            }
+          }
+        } catch {
+          // ignore error during background reconciliation attempt
+        }
+      }
+
+      if (!reconciled) {
+        const errorMsg: Message = {
+          id: String(Date.now() + 1),
+          role: "assistant",
+          content: `⚠️ Failed to get a timely response (${
+            err instanceof Error ? err.message : "Request timed out"
+          }). The backend reasoning process may still be running in the background. Click below to recheck server state.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      }
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleRecheckThread() {
+    if (!activeProject?.id) return;
+    try {
+      const sessionList = await listChatSessions(
+        activeProject.id,
+        selectedRepoId === "all" ? undefined : selectedRepoId
+      );
+      const targetSessionId = activeSessionId || sessionList.items[0]?.id;
+      if (targetSessionId) {
+        const msgRes = await getSessionMessages(activeProject.id, targetSessionId);
+        if (msgRes.items.length > 0) {
+          setMessages(
+            msgRes.items.map((m) => ({
+              id: String(m.id),
+              role: m.role,
+              content: m.content,
+              model: m.model ?? undefined,
+              confidence: m.confidence ?? undefined,
+              structured_reasoning: m.structured_reasoning ?? undefined,
+              timestamp: new Date(m.created_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            }))
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to recheck thread", err);
     }
   }
 
@@ -545,6 +619,19 @@ export function AIAssistantPage() {
                   />
                 ) : (
                   <CoodaraMarkdown content={m.content} />
+                )}
+
+                {m.content.startsWith("⚠️") && (
+                  <div className="mt-2.5 flex items-center gap-2 pt-2 border-t border-[var(--cd-border-soft)]">
+                    <button
+                      type="button"
+                      onClick={() => void handleRecheckThread()}
+                      className="cursor-pointer inline-flex items-center gap-1 rounded bg-[var(--cd-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--cd-accent)] hover:bg-[var(--cd-accent)] hover:text-white transition-colors"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Check Server Response
+                    </button>
+                  </div>
                 )}
 
                 <div

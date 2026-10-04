@@ -164,8 +164,10 @@ class ArchitectureReportResponse(BaseModel):
     components: list[ReportComponentItem] = Field(default_factory=list)
     diagram: ReportDiagram
     dependencies: list[ReportDependencyHotspot] = Field(default_factory=list)
+    dependency_hotspots: list[ReportDependencyHotspot] = Field(default_factory=list)
     findings: list[ReportFindingItem] = Field(default_factory=list)
     recommendations: list[ReportRecommendationItem] = Field(default_factory=list)
     decision_records: list[ReportADRItem] = Field(default_factory=list)
+    adrs: list[ReportADRItem] = Field(default_factory=list)
     methodology: ReportMethodology
     markdown_content: str = ""

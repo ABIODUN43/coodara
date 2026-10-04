@@ -184,6 +184,8 @@ describe("ArchitectureLabPage", () => {
     vi.spyOn(labApi, "listResourceProfiles").mockResolvedValue([sampleResource]);
     vi.spyOn(labApi, "listEvidence").mockResolvedValue([sampleEvidence]);
     vi.spyOn(labApi, "listDecisionRecords").mockResolvedValue([sampleDecision]);
+    vi.spyOn(labApi, "listPricingSnapshots").mockResolvedValue([]);
+    vi.spyOn(labApi, "listCostScenarios").mockResolvedValue([]);
     vi.spyOn(labApi, "createHypothesis").mockResolvedValue(sampleHypothesis);
     vi.spyOn(labApi, "createDecisionRecord").mockResolvedValue(sampleDecision);
   });

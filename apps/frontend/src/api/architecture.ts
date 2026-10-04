@@ -562,10 +562,24 @@ export async function fetchArchitectureReport(
   orgId: string | number,
   repoId: string | number
 ): Promise<ArchitectureReportResponse> {
-  const res = await api.get<ArchitectureReportResponse>(
+  const res = await api.get<any>(
     `/organizations/${orgId}/repositories/${repoId}/architecture/report`
   );
-  return res.data;
+  const data = res.data;
+  return {
+    ...data,
+    dependency_hotspots: data.dependency_hotspots ?? data.dependencies ?? [],
+    adrs: data.adrs ?? data.decision_records ?? [],
+    technology_stack: data.technology_stack ?? [],
+    components: data.components ?? [],
+    findings: data.findings ?? [],
+    recommendations: data.recommendations ?? [],
+    executive_summary: {
+      ...data.executive_summary,
+      key_architecture_rules: data.executive_summary?.key_architecture_rules ?? [],
+      anti_patterns_detected: data.executive_summary?.anti_patterns_detected ?? [],
+    },
+  };
 }
 
 export async function downloadArchitectureReportMarkdown(

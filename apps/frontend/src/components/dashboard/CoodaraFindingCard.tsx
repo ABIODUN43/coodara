@@ -55,7 +55,7 @@ export function CoodaraFindingCard({
   const isCritical = topIssue?.issue.severity === "critical";
 
   return (
-    <div className="rounded-[12px] border border-[var(--cd-border)] bg-[var(--cd-surface)] p-5 shadow-2xs">
+    <div className="rounded-[12px] border border-[var(--cd-border)] bg-[var(--cd-surface)] p-5 shadow-2xs max-w-full overflow-hidden">
       {/* Badge & Confidence Header */}
       <div className="flex items-center justify-between border-b border-[var(--cd-border-soft)] pb-3">
         <div className="flex items-center gap-2">
@@ -85,22 +85,24 @@ export function CoodaraFindingCard({
           >
             {isCritical ? "Critical Boundary" : "Warning"}
           </span>
-          <span className="text-[12px] font-medium text-[var(--cd-ink-faint)]">{repoName}</span>
+          <span className="text-[12px] font-medium text-[var(--cd-ink-faint)] truncate">{repoName}</span>
         </div>
 
-        <h3 className="mt-1.5 text-[15px] font-bold text-[var(--cd-ink)] leading-snug">
+        <h3 className="mt-1.5 text-[15px] font-bold text-[var(--cd-ink)] leading-snug break-words">
           {title}
         </h3>
       </div>
 
       {/* Evidence Block */}
-      <div className="mt-3 rounded-[8px] border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)]/50 p-3">
+      <div className="mt-3 rounded-[8px] border border-[var(--cd-border-soft)] bg-[var(--cd-sunken)]/50 p-3 max-w-full overflow-hidden">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--cd-ink-faint)]">
           Syntactic Evidence
         </div>
-        <p className="mt-1 font-mono text-[11.5px] text-[var(--cd-ink-soft)] leading-relaxed">
-          {description}
-        </p>
+        <div className="mt-1 max-h-36 overflow-y-auto pr-1">
+          <p className="font-mono text-[11.5px] text-[var(--cd-ink-soft)] leading-relaxed break-words break-all">
+            {description}
+          </p>
+        </div>
       </div>
 
       {/* Why It Matters */}
@@ -108,7 +110,7 @@ export function CoodaraFindingCard({
         <div className="text-[11px] font-semibold text-[var(--cd-ink-faint)] uppercase tracking-wider">
           Why It Matters
         </div>
-        <p className="mt-0.5 text-[12px] text-[var(--cd-ink-soft)] leading-relaxed">
+        <p className="mt-0.5 text-[12px] text-[var(--cd-ink-soft)] leading-relaxed break-words">
           Uncontrolled coupling across this boundary causes ripples: downstream changes
           propagate unintended regression risk into connected services.
         </p>
@@ -126,7 +128,7 @@ export function CoodaraFindingCard({
               navigate(`/findings`);
             }
           }}
-          className="gap-1 text-[11.5px]"
+          className="gap-1 text-[11.5px] cursor-pointer"
         >
           <span>Inspect Evidence</span>
           <ArrowRight className="h-3 w-3" />
@@ -136,9 +138,9 @@ export function CoodaraFindingCard({
           variant="outline"
           size="sm"
           onClick={() => {
-            navigate(`/dashboard/chat?query=${encodeURIComponent(`Explain risk: ${title}`)}`);
+            navigate(`/chat?query=${encodeURIComponent(`Explain risk: ${title}`)}`);
           }}
-          className="gap-1 text-[11.5px]"
+          className="gap-1 text-[11.5px] cursor-pointer"
         >
           <Sparkles className="h-3 w-3 text-[var(--cd-accent)]" />
           <span>Ask Coodara</span>
@@ -147,8 +149,8 @@ export function CoodaraFindingCard({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(`/dashboard/simulation`)}
-          className="gap-1 text-[11.5px] text-[var(--cd-ink-soft)]"
+          onClick={() => navigate('/lab')}
+          className="gap-1 text-[11.5px] text-[var(--cd-ink-soft)] cursor-pointer"
         >
           <span>Run What-If</span>
         </Button>
