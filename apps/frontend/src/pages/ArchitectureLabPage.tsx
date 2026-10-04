@@ -449,6 +449,7 @@ export function ArchitectureLabPage() {
           }}
           hypothesisId={targetHypothesisForExperiment.id}
           hypothesisTitle={targetHypothesisForExperiment.title}
+          interventions={targetHypothesisForExperiment.interventions}
         />
       )}
 

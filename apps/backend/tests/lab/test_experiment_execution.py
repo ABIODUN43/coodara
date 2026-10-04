@@ -428,3 +428,71 @@ async def test_proposed_reference_unanalyzed_branch_rejection() -> None:
         )
 
     assert "refactor/payment-port" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_execute_run_with_default_frontend_references() -> None:
+    """
+    Verify that an experiment created with frontend defaults
+    (baseline_reference: {'type': 'current_commit', 'value': 'HEAD (Default Branch)'} and
+     proposed_reference: {'type': 'proposed_intervention', 'value': 'Intervention Variant'})
+    successfully resolves the latest snapshot and the hypothesis's intervention.
+    """
+    service, _, mock_lab_repo, mock_arch_repo, mock_repo_repo = _make_service()
+
+    mock_repo = MagicMock(spec=Repository, id=1, organization_id=10)
+    mock_repo_repo.get_by_id.return_value = mock_repo
+
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=20,
+        hypothesis_id=5,
+        baseline_reference={"type": "current_commit", "value": "HEAD (Default Branch)"},
+        proposed_reference={"type": "proposed_intervention", "value": "Intervention Variant"},
+    )
+    mock_lab_repo.get_experiment_by_id.return_value = mock_exp
+    mock_lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=5)
+
+    graph_data = json.dumps({
+        "version": 1,
+        "nodes": [{"id": "pkg/kafka/producer.py"}, {"id": "pkg/api/handler.py"}],
+        "edges": [{"source": "pkg/api/handler.py", "target": "pkg/kafka/producer.py", "kind": "import"}],
+    })
+    mock_snapshot = MagicMock(
+        spec=ArchitectureSnapshotModel,
+        id=100,
+        repository_id=1,
+        analysis_result_id=10,
+        snapshot_version=1,
+        graph=graph_data,
+        commit_sha="abcd1234ef",
+        score=MagicMock(spec=ArchitectureScore, maintainability=70.0, coupling=50.0, cohesion=60.0, complexity=40.0),
+        issues=[],
+    )
+    mock_arch_repo.get_latest_by_repository.return_value = mock_snapshot
+
+    mock_intervention = MagicMock(
+        spec=Intervention,
+        id=77,
+        hypothesis_id=5,
+        intervention_type=InterventionType.COMPATIBLE_REFACTOR.value,
+        target_component_ids=["pkg/kafka/producer.py"],
+        parameters={"description": "Refactor to async Kafka event pipeline"},
+    )
+    mock_lab_repo.list_interventions.return_value = [mock_intervention]
+
+    mock_run = MagicMock(spec=ExperimentRun, id=1, experiment_id=20, run_number=1, status=ExperimentRunStatus.PENDING.value, result_data={})
+    mock_lab_repo.get_experiment_run_by_id.return_value = mock_run
+    mock_lab_repo.create_evidence_item.side_effect = lambda item: MagicMock(id=99, category=item.category)
+
+    executed_run = await service.execute_run(
+        organization_id=10,
+        repository_id=1,
+        experiment_id=20,
+        run_id=1,
+    )
+
+    assert executed_run.status == ExperimentRunStatus.COMPLETED.value
+    assert executed_run.result_data["baseline_evaluated_reference"]["snapshot_id"] == 100
+    assert executed_run.result_data["proposed_evaluated_reference"]["intervention_id"] == 77
+

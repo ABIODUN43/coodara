@@ -488,8 +488,15 @@ class ExperimentExecutionService:
                 f"Requested baseline architecture snapshot {snapshot_id} does not exist for repository {repository_id}."
             )
 
-        # If user explicitly requested latest
-        if baseline_ref.get("type") == "latest" or baseline_ref.get("use_latest") is True:
+        ref_type = str(baseline_ref.get("type", "")).strip().lower()
+        ref_val = str(baseline_ref.get("value", "")).strip()
+
+        # If user explicitly requested latest or current_commit / HEAD default
+        if (
+            ref_type in ("latest", "current_commit")
+            or baseline_ref.get("use_latest") is True
+            or ref_val in ("HEAD", "HEAD (Default Branch)", "latest")
+        ):
             snapshot = await self.arch_repo.get_latest_by_repository(repository_id)
             if snapshot is not None:
                 return snapshot
@@ -530,11 +537,25 @@ class ExperimentExecutionService:
           it must use a recognized InterventionType.
         - If an unanalyzed git branch/commit was provided without an intervention, fails with
           UnsupportedInterventionError rather than silently defaulting to 'REMOVE'.
+        - If a generic proposed reference is provided, falls back to the hypothesis's configured interventions.
         """
         if not proposed_ref:
+            hypothesis_interventions = await self.lab_repo.list_interventions(hypothesis_id)
+            if hypothesis_interventions:
+                intervention = hypothesis_interventions[-1]
+                return intervention, intervention.intervention_type, list(intervention.target_component_ids), dict(intervention.parameters)
             raise UnsupportedInterventionError(
                 "Proposed reference cannot be empty. Specify an intervention_id or an explicit structural intervention."
             )
+
+        # If an unanalyzed branch or commit was provided without an intervention, fail deterministically
+        for branch_key in ("branch", "commit", "commit_sha", "ref"):
+            if branch_key in proposed_ref:
+                raise UnsupportedInterventionError(
+                    f"Proposed reference '{proposed_ref[branch_key]}' specifies an unanalyzed branch or commit without an intervention. "
+                    f"The deterministic structural simulation engine evaluates modeled interventions on the baseline AST topology. "
+                    f"Specify an intervention_id or an explicit intervention_type with target_component_ids."
+                )
 
         intervention_id = proposed_ref.get("intervention_id")
         intervention: Intervention | None = None
@@ -548,16 +569,27 @@ class ExperimentExecutionService:
             intervention_type = intervention.intervention_type
             target_components = list(intervention.target_component_ids)
             parameters = dict(intervention.parameters)
-        elif "intervention_type" in proposed_ref or "type" in proposed_ref:
+        elif (
+            "intervention_type" in proposed_ref
+            or ("type" in proposed_ref and proposed_ref.get("type") in {t.value for t in InterventionType})
+        ):
             intervention_type = proposed_ref.get("intervention_type", proposed_ref.get("type"))
             target_components = proposed_ref.get("target_component_ids", proposed_ref.get("target_components", []))
             parameters = proposed_ref.get("parameters", {})
         else:
-            raise UnsupportedInterventionError(
-                f"Proposed reference '{proposed_ref}' does not specify an intervention_id or explicit intervention_type. "
-                f"The deterministic structural simulation engine evaluates modeled interventions on the baseline AST topology. "
-                f"Specify an intervention_id or an explicit intervention_type with target_component_ids."
-            )
+            # Fall back to interventions formulated under this hypothesis
+            hypothesis_interventions = await self.lab_repo.list_interventions(hypothesis_id)
+            if hypothesis_interventions:
+                intervention = hypothesis_interventions[-1]
+                intervention_type = intervention.intervention_type
+                target_components = list(intervention.target_component_ids)
+                parameters = dict(intervention.parameters)
+            else:
+                raise UnsupportedInterventionError(
+                    f"Proposed reference '{proposed_ref}' does not specify an intervention_id or explicit intervention_type, "
+                    f"and no intervention exists for hypothesis {hypothesis_id}. "
+                    f"Please define an intervention on the hypothesis before running the experiment."
+                )
 
         # Validate intervention type
         valid_types = {t.value for t in InterventionType}

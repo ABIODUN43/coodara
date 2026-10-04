@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AlertCircle, Layers, Plus, Sparkles, X } from "lucide-react";
-import type { ExperimentCreateRequest, ExperimentStatus } from "@/types/lab";
+import type { ExperimentCreateRequest, ExperimentStatus, Intervention } from "@/types/lab";
 
 interface ExperimentModalProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface ExperimentModalProps {
   onSubmit: (payload: ExperimentCreateRequest) => Promise<void>;
   hypothesisId: number;
   hypothesisTitle: string;
+  interventions?: Intervention[];
 }
 
 export function ExperimentModal({
@@ -16,14 +17,22 @@ export function ExperimentModal({
   onSubmit,
   hypothesisId,
   hypothesisTitle,
+  interventions,
 }: ExperimentModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<ExperimentStatus>("READY");
-  const baselineRefType = "current_commit";
-  const [baselineRefVal, setBaselineRefVal] = useState("HEAD (Default Branch)");
+  const baselineRefType = "latest";
+  const [baselineRefVal, setBaselineRefVal] = useState("HEAD (Latest Snapshot)");
   const proposedRefType = "proposed_intervention";
-  const [proposedRefVal, setProposedRefVal] = useState("Intervention Variant");
+  const [selectedInterventionId, setSelectedInterventionId] = useState<number | undefined>(
+    interventions && interventions.length > 0 ? interventions[interventions.length - 1].id : undefined
+  );
+  const [proposedRefVal, setProposedRefVal] = useState(
+    interventions && interventions.length > 0
+      ? `${interventions[interventions.length - 1].intervention_type} on ${interventions[interventions.length - 1].target_component_ids.join(", ")}`
+      : "Intervention Variant"
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +61,7 @@ export function ExperimentModal({
         },
         proposed_reference: {
           type: proposedRefType,
+          intervention_id: selectedInterventionId,
           value: proposedRefVal,
         },
       });
@@ -154,15 +164,36 @@ export function ExperimentModal({
             {/* Proposed Reference */}
             <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
-                Proposed Architecture
+                Proposed Architecture / Intervention
               </span>
-              <input
-                type="text"
-                value={proposedRefVal}
-                onChange={(e) => setProposedRefVal(e.target.value)}
-                placeholder="Proposed Variant Name"
-                className="w-full rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--cd-ink)] focus:outline-none focus:border-[var(--cd-accent)]"
-              />
+              {interventions && interventions.length > 0 ? (
+                <select
+                  value={selectedInterventionId}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    setSelectedInterventionId(id);
+                    const matched = interventions.find((i) => i.id === id);
+                    if (matched) {
+                      setProposedRefVal(`${matched.intervention_type} on ${matched.target_component_ids.join(", ")}`);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--cd-ink)] focus:outline-none focus:border-[var(--cd-accent)]"
+                >
+                  {interventions.map((inv) => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.intervention_type} ({inv.target_component_ids.join(", ")})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={proposedRefVal}
+                  onChange={(e) => setProposedRefVal(e.target.value)}
+                  placeholder="Proposed Variant Name"
+                  className="w-full rounded-lg border border-[var(--cd-border)] bg-[var(--cd-surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--cd-ink)] focus:outline-none focus:border-[var(--cd-accent)]"
+                />
+              )}
             </div>
           </div>
 
