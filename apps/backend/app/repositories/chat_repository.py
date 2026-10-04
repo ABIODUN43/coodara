@@ -61,6 +61,7 @@ class ChatRepository:
         stmt = (
             select(ChatSession)
             .where(ChatSession.organization_id == organization_id)
+            .options(selectinload(ChatSession.messages))
         )
         if repository_id is not None:
             stmt = stmt.where(ChatSession.repository_id == repository_id)
