@@ -113,11 +113,16 @@ export function ExperimentWorkspace({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex items-center rounded-md bg-[var(--cd-accent)]/10 px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase text-[var(--cd-accent)]">
+              Level 1 &mdash; Structural Pre-Flight
+            </span>
+          </div>
           <h2 className="text-lg font-bold text-[var(--cd-ink)]">
-            Comparative Architecture Experiments
+            Structural Pre-Flight Simulation
           </h2>
           <p className="text-xs text-[var(--cd-ink-soft)] mt-0.5">
-            Compare baseline system topologies against proposed structural interventions.
+            Evaluate predicted structural consequences against the current architecture graph before making code changes.
           </p>
         </div>
 
@@ -280,14 +285,20 @@ export function ExperimentWorkspace({
                       </>
                     ) : (
                       onExecuteExperiment && (
-                        <button
-                          type="button"
-                          onClick={handleExecute}
-                          className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors shadow-xs"
-                        >
-                          <Play className="h-3.5 w-3.5" />
-                          <span>Run Experiment</span>
-                        </button>
+                        <div className="flex flex-col items-end gap-1">
+                          <button
+                            type="button"
+                            onClick={handleExecute}
+                            aria-label="Run Experiment — Level 1 Structural Simulation"
+                            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-[var(--cd-accent)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--cd-accent-hover)] transition-colors shadow-xs"
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                            <span>Run Simulation</span>
+                          </button>
+                          <span className="text-[10px] text-[var(--cd-ink-faint)] italic">
+                            Deterministic simulation &bull; No code modified
+                          </span>
+                        </div>
                       )
                     )}
                   </div>
@@ -309,16 +320,16 @@ export function ExperimentWorkspace({
                   <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 flex items-center gap-3 text-xs text-blue-900 dark:text-blue-200">
                     <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
                     <div>
-                      <span className="font-semibold">Evaluation in progress</span>
+                      <span className="font-semibold">Structural simulation in progress</span>
                       <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
-                        Deterministic structural analysis is currently running in the isolated worker engine.
+                        Deterministic topological evaluation is running against the architecture graph.
                       </p>
                     </div>
                   </div>
                 ) : isCancelled ? (
                   <div className="rounded-xl border border-neutral-500/20 bg-neutral-500/5 p-4 flex items-center gap-2.5 text-xs text-[var(--cd-ink-soft)]">
                     <XCircle className="h-4 w-4 text-neutral-500" />
-                    <span>Evaluation cancelled by user. Click Re-run to evaluate again.</span>
+                    <span>Simulation cancelled by user. Click Re-run to evaluate again.</span>
                   </div>
                 ) : !isCompleted ? (
                   <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-1.5 text-xs text-amber-800 dark:text-amber-200">
@@ -327,8 +338,11 @@ export function ExperimentWorkspace({
                       <span>Status: Not evaluated</span>
                     </div>
                     <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
-                      Click <span className="font-semibold">Run Experiment</span> above to evaluate structural consequences,
-                      coupling changes, and boundary crossings against the baseline architecture snapshot.
+                      Click <span className="font-semibold">Run Simulation</span> above to evaluate predicted structural consequences,
+                      coupling changes, and boundary crossings against the baseline architecture model.
+                    </p>
+                    <p className="text-[10px] text-[var(--cd-ink-faint)] italic">
+                      * This runs a Level 1 deterministic structural simulation against the architecture model. No repository code is modified.
                     </p>
                   </div>
                 ) : null}
@@ -336,14 +350,14 @@ export function ExperimentWorkspace({
                 {/* References Card: Baseline vs Proposed */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
-                    Evaluation References
+                    Structural Pre-Flight References
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Baseline */}
                     <div className="rounded-xl border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-4 space-y-2">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--cd-ink)]">
                         <Clock className="h-4 w-4 text-[var(--cd-ink-faint)]" />
-                        <span>Baseline Reference</span>
+                        <span>Baseline Architecture Model</span>
                       </div>
                       <div className="font-mono text-xs text-[var(--cd-ink-soft)] bg-[var(--cd-surface)] p-2.5 rounded-lg border border-[var(--cd-border)] break-all">
                         {JSON.stringify(resultData?.baseline_reference || activeExp.baseline_reference, null, 2)}
@@ -354,7 +368,7 @@ export function ExperimentWorkspace({
                     <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-2">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
                         <Sparkles className="h-4 w-4 text-indigo-500" />
-                        <span>Proposed Intervention</span>
+                        <span>Proposed Structural Mutation</span>
                       </div>
                       <div className="font-mono text-xs text-[var(--cd-ink)] bg-[var(--cd-surface)] p-2.5 rounded-lg border border-indigo-500/20 break-all">
                         {JSON.stringify(resultData?.proposed_reference || activeExp.proposed_reference, null, 2)}
@@ -366,11 +380,34 @@ export function ExperimentWorkspace({
                 {/* COMPLETED: Structured Results Comparison Table */}
                 {isCompleted && metricsBefore && metricsAfter && diffs && (
                   <div className="space-y-4 pt-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
-                        Deterministic Structural Comparison
-                      </span>
-                      <span className="text-[10px] text-[var(--cd-ink-faint)] font-mono">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[var(--cd-border-soft)] pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-[var(--cd-ink)]">
+                            Predicted Structural Consequences
+                          </span>
+                          <span className="text-[11px] text-[var(--cd-ink-faint)] font-medium">
+                            Deterministic Structural Comparison
+                          </span>
+                          <span className={`inline-flex items-center rounded px-2 py-0.5 text-[9px] font-bold uppercase font-mono tracking-wider ${
+                            diffs.boundary_crossings === 0 && (diffs.issues_count || 0) <= 0
+                              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                              : diffs.boundary_crossings > 0
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                              : "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                          }`}>
+                            {diffs.boundary_crossings === 0 && (diffs.issues_count || 0) <= 0
+                              ? "STRUCTURALLY PROMISING"
+                              : diffs.boundary_crossings > 0
+                              ? "STRUCTURAL RISK DETECTED"
+                              : "STRUCTURAL TRADE-OFF"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[var(--cd-ink-soft)] mt-0.5">
+                          Model-derived topological comparison. Non-empirical prediction &mdash; requires Level 2 code experimentation for empirical verification.
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-[var(--cd-ink-faint)] font-mono self-start sm:self-auto">
                         Duration: {resultData.duration_seconds ?? 0}s | Pure In-Memory Analysis
                       </span>
                     </div>
@@ -380,9 +417,9 @@ export function ExperimentWorkspace({
                         <thead>
                           <tr className="border-b border-[var(--cd-border)] bg-[var(--cd-bg)] text-[var(--cd-ink-soft)]">
                             <th className="py-2.5 px-4 font-semibold">Architectural Metric</th>
-                            <th className="py-2.5 px-4 font-semibold">Baseline</th>
-                            <th className="py-2.5 px-4 font-semibold">Proposed</th>
-                            <th className="py-2.5 px-4 font-semibold">Delta (Proposed &minus; Baseline)</th>
+                            <th className="py-2.5 px-4 font-semibold">Baseline Architecture</th>
+                            <th className="py-2.5 px-4 font-semibold">Proposed Structural Model</th>
+                            <th className="py-2.5 px-4 font-semibold">Predicted Delta (Proposed &minus; Baseline)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--cd-border-soft)] font-mono">
@@ -452,7 +489,7 @@ export function ExperimentWorkspace({
                       </table>
                     </div>
                     <p className="text-[11px] text-[var(--cd-ink-faint)] italic">
-                      Delta convention: &Delta; = Proposed &minus; Baseline. Structural deltas report topological alterations; architectural fitness is interpreted by engineering context.
+                      Delta convention: &Delta; = Proposed &minus; Baseline. Structural metrics are model predictions derived from topological simulation. No source code has been modified or compiled.
                     </p>
 
                     {/* Direct Impacts Card */}
@@ -511,19 +548,24 @@ export function ExperimentWorkspace({
                     {/* Traceable Evidence Notice */}
                     <div className="rounded-xl border border-[var(--cd-border-soft)] bg-[var(--cd-bg)] p-4 flex items-center justify-between text-xs">
                       <div className="space-y-0.5">
-                        <span className="font-semibold text-[var(--cd-ink)]">Traceable Evidence Recorded</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-[var(--cd-ink)]">Model Evidence Ledger</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                            STATIC &bull; Graph Model Prediction
+                          </span>
+                        </div>
                         <p className="text-[11px] text-[var(--cd-ink-soft)]">
                           {resultData.generated_evidence_ids?.length || 0} evidence ledger entries generated with <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">STATIC</span> provenance.
                         </p>
                       </div>
                       <span className="text-[10px] font-mono text-[var(--cd-ink-faint)] bg-[var(--cd-surface)] px-2 py-1 rounded border border-[var(--cd-border)]">
-                        AST_GRAPH_EVALUATION
+                        LEVEL_1_GRAPH_SIMULATION
                       </span>
                     </div>
 
                     {/* Honest Epistemic Notice */}
                     <div className="text-[11px] text-[var(--cd-ink-faint)] italic leading-relaxed pt-2 border-t border-[var(--cd-border-soft)]">
-                      * Structural metrics are deterministically derived from AST graph dependencies. No runtime latency, throughput, or cloud cost changes are inferred without measured production telemetry.
+                      * Level 1 structural metrics are model-derived predictions calculated deterministically from AST graph dependencies. No code has been modified, compiled, or tested. No runtime latency, throughput, or cloud cost changes are inferred without Level 2 code experimentation and Level 3 production telemetry.
                     </div>
                   </div>
                 )}

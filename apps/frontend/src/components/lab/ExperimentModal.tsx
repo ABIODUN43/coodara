@@ -99,14 +99,14 @@ export function ExperimentModal({
           </p>
         </div>
 
-        {/* Notice of Stage 3 boundary */}
+        {/* Notice of Level 1 Structural Pre-Flight Scope */}
         <div className="mb-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-blue-900 dark:text-blue-200">
           <div className="flex items-center gap-1.5 font-semibold text-blue-700 dark:text-blue-300">
             <Sparkles className="h-3.5 w-3.5" />
-            <span>Evaluation Engine Coming in Stage 4</span>
+            <span>Level 1 &mdash; Structural Pre-Flight Simulation</span>
           </div>
           <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80 mt-1">
-            Experiments are saved in <span className="font-semibold font-mono">READY</span> status. Sandbox execution, load harness runners, and automated benchmarks will execute in Stage 4.
+            Experiments evaluate predicted structural consequences against the current architecture graph before code changes. Code-based execution (Level 2) and live benchmarks (Level 3) are scheduled for subsequent phases.
           </p>
         </div>
 

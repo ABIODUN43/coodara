@@ -269,11 +269,10 @@ export function LabOverviewTab({
               <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-blue-900 dark:text-blue-200">
                 <div className="flex items-center gap-1.5 font-semibold text-blue-700 dark:text-blue-300">
                   <Sparkles className="h-3.5 w-3.5" />
-                  <span>Stage 3: Experiment Definitions Grounded in Architecture</span>
+                  <span>Level 1 &mdash; Structural Pre-Flight Simulation</span>
                 </div>
                 <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80 mt-1">
-                  Evaluation engines, live benchmark runners, and sandbox execution are scheduled for Stage 4.
-                  No synthetic results are fabricated.
+                  Level 1 evaluates predicted topological graph impact against the architecture model. Code-based experimentation (Level 2) and live telemetry (Level 3) are scheduled for subsequent phases. No synthetic results are fabricated.
                 </p>
               </div>
             </div>

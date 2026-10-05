@@ -61,7 +61,7 @@ const DECISION_OPTIONS: Array<{
     label: "Needs Validation",
     icon: HelpCircle,
     color: "purple",
-    desc: "Requires further empirical benchmark data or Stage 4 execution verification.",
+    desc: "Requires further empirical verification via Level 2 code experimentation or Level 3 runtime telemetry.",
   },
 ];
 
