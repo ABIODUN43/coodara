@@ -85,7 +85,9 @@ export function ExperimentWorkspace({
     setIsExecuting(true);
     setExecutionError(null);
     try {
-      await onExecuteExperiment(activeExp.id, latestRun?.id);
+      const isRunPending = latestRun?.status === "PENDING";
+      const runIdToExecute = isRunPending ? latestRun?.id : undefined;
+      await onExecuteExperiment(activeExp.id, runIdToExecute);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||

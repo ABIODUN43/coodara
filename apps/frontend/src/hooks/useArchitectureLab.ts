@@ -327,16 +327,21 @@ export function useArchitectureLab(
       if (!orgId || !repoId) throw new Error("Missing organization or repository ID");
       let targetRunId = runId;
       if (!targetRunId) {
+        const exp = experiments.find((e) => e.id === experimentId);
+        const nextRunNumber = (exp?.runs?.length || 0) + 1;
         const newRun = await createExperimentRun(orgId, repoId, experimentId, {
-          run_number: 1,
+          run_number: nextRunNumber,
         });
         targetRunId = newRun.id;
       }
-      const completedRun = await executeExperimentRun(orgId, repoId, experimentId, targetRunId);
-      await refresh();
-      return completedRun;
+      try {
+        const completedRun = await executeExperimentRun(orgId, repoId, experimentId, targetRunId);
+        return completedRun;
+      } finally {
+        await refresh();
+      }
     },
-    [orgId, repoId, refresh]
+    [orgId, repoId, experiments, refresh]
   );
 
   const cancelExperiment = useCallback(

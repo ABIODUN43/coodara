@@ -496,3 +496,267 @@ async def test_execute_run_with_default_frontend_references() -> None:
     assert executed_run.result_data["baseline_evaluated_reference"]["snapshot_id"] == 100
     assert executed_run.result_data["proposed_evaluated_reference"]["intervention_id"] == 77
 
+
+@pytest.mark.asyncio
+async def test_execute_run_persists_evidence_with_static_category() -> None:
+    """
+    Verify that evidence items generated during simulation have category=STATIC
+    and strictly match the AEI domain and lab_evidence_ledger schema.
+    """
+    service, _, mock_lab_repo, mock_arch_repo, mock_repo_repo = _make_service()
+
+    mock_repo = MagicMock(spec=Repository, id=1, organization_id=10)
+    mock_repo_repo.get_by_id.return_value = mock_repo
+
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=20,
+        hypothesis_id=5,
+        baseline_reference={"snapshot_id": 100},
+        proposed_reference={"intervention_id": 77},
+    )
+    mock_lab_repo.get_experiment_by_id.return_value = mock_exp
+    mock_lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=5)
+
+    graph_data = json.dumps({
+        "version": 1,
+        "nodes": [{"id": "service/a.py"}, {"id": "service/b.py"}],
+        "edges": [{"source": "service/a.py", "target": "service/b.py", "kind": "import"}],
+    })
+    mock_snapshot = MagicMock(
+        spec=ArchitectureSnapshotModel,
+        id=100,
+        repository_id=1,
+        graph=graph_data,
+        commit_sha="abcd1234ef",
+        score=MagicMock(spec=ArchitectureScore, maintainability=70.0, coupling=50.0, cohesion=60.0, complexity=40.0),
+        issues=[],
+    )
+    mock_arch_repo.get_by_id.return_value = mock_snapshot
+
+    mock_intervention = MagicMock(
+        spec=Intervention,
+        id=77,
+        hypothesis_id=5,
+        intervention_type=InterventionType.COMPATIBLE_REFACTOR.value,
+        target_component_ids=["service/b.py"],
+        parameters={"description": "Refactor interface b"},
+    )
+    mock_lab_repo.get_intervention_by_id.return_value = mock_intervention
+
+    mock_run = MagicMock(spec=ExperimentRun, id=1, experiment_id=20, run_number=1, status=ExperimentRunStatus.PENDING.value, result_data={})
+    mock_lab_repo.get_experiment_run_by_id.return_value = mock_run
+
+    persisted_items: list[EvidenceItem] = []
+
+    async def _fake_create_evidence_item(item: EvidenceItem) -> EvidenceItem:
+        persisted_items.append(item)
+        item.id = len(persisted_items)
+        return item
+
+    mock_lab_repo.create_evidence_item.side_effect = _fake_create_evidence_item
+
+    await service.execute_run(
+        organization_id=10,
+        repository_id=1,
+        experiment_id=20,
+        run_id=1,
+    )
+
+    assert len(persisted_items) == 2
+    for item in persisted_items:
+        assert item.category == EvidenceCategory.STATIC.value
+        assert item.organization_id == 10
+        assert item.repository_id == 1
+        assert item.hypothesis_id == 5
+        assert item.experiment_id == 20
+        assert item.run_id == 1
+        assert item.confidence is not None
+        assert "analyzer_version" in item.provenance
+        assert "evaluation_timestamp" in item.provenance
+        assert item.provenance["evidence_type"] == "deterministic_structural_simulation"
+
+
+@pytest.mark.asyncio
+async def test_execute_run_handles_persistence_failure_with_rollback_and_failed_status() -> None:
+    """
+    Verify that if evidence persistence or any later step throws an error:
+    1. session.rollback() is awaited before further database actions.
+    2. run.status is set to FAILED and committed.
+    3. ExperimentExecutionError is raised with safe error message.
+    """
+    service, mock_db, mock_lab_repo, mock_arch_repo, mock_repo_repo = _make_service()
+
+    mock_repo = MagicMock(spec=Repository, id=1, organization_id=10)
+    mock_repo_repo.get_by_id.return_value = mock_repo
+
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=20,
+        hypothesis_id=5,
+        baseline_reference={"snapshot_id": 100},
+        proposed_reference={"intervention_id": 77},
+    )
+    mock_lab_repo.get_experiment_by_id.return_value = mock_exp
+    mock_lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=5)
+
+    graph_data = json.dumps({
+        "version": 1,
+        "nodes": [{"id": "service/a.py"}, {"id": "service/b.py"}],
+        "edges": [{"source": "service/a.py", "target": "service/b.py", "kind": "import"}],
+    })
+    mock_snapshot = MagicMock(
+        spec=ArchitectureSnapshotModel,
+        id=100,
+        repository_id=1,
+        graph=graph_data,
+        commit_sha="abcd1234ef",
+        score=MagicMock(spec=ArchitectureScore, maintainability=70.0, coupling=50.0, cohesion=60.0, complexity=40.0),
+        issues=[],
+    )
+    mock_arch_repo.get_by_id.return_value = mock_snapshot
+
+    mock_intervention = MagicMock(
+        spec=Intervention,
+        id=77,
+        hypothesis_id=5,
+        intervention_type=InterventionType.COMPATIBLE_REFACTOR.value,
+        target_component_ids=["service/b.py"],
+        parameters={},
+    )
+    mock_lab_repo.get_intervention_by_id.return_value = mock_intervention
+
+    pending_run = MagicMock(spec=ExperimentRun, id=1, experiment_id=20, status=ExperimentRunStatus.PENDING.value)
+    mock_lab_repo.get_experiment_run_by_id.return_value = pending_run
+
+    # Simulate database failure during evidence item persistence
+    mock_lab_repo.create_evidence_item.side_effect = RuntimeError("Database flush constraint error")
+
+    with pytest.raises(Exception) as exc_info:
+        await service.execute_run(
+            organization_id=10,
+            repository_id=1,
+            experiment_id=20,
+            run_id=1,
+        )
+
+    # Verify rollback was called
+    mock_db.rollback.assert_awaited()
+
+    # Verify FAILED status was committed
+    assert pending_run.status == ExperimentRunStatus.FAILED.value
+    assert "Database flush constraint error" in pending_run.error
+    mock_db.commit.assert_awaited()
+
+    # Verify safe error message is propagated
+    assert "Database flush constraint error" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_execute_run_with_exact_client_telemetry_isolation_experiment() -> None:
+    """
+    End-to-end unit test reproducing the exact production scenario:
+    - Experiment: 'Client Telemetry Boundary Isolation'
+    - Hypothesis: 'Isolate Client Telemetry from Common Client Configuration'
+    - Intervention: 'Compatible Refactor' on 'client_telemetry.py'
+    - Baseline: latest HEAD snapshot
+    """
+    service, _, mock_lab_repo, mock_arch_repo, mock_repo_repo = _make_service()
+
+    mock_repo = MagicMock(spec=Repository, id=42, organization_id=1)
+    mock_repo_repo.get_by_id.return_value = mock_repo
+
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=15,
+        hypothesis_id=7,
+        name="Client Telemetry Boundary Isolation",
+        baseline_reference={"type": "current_commit", "value": "HEAD"},
+        proposed_reference={"type": "proposed_intervention", "value": "Compatible Refactor", "intervention_id": 9},
+        status=ExperimentStatus.DRAFT.value,
+    )
+    mock_lab_repo.get_experiment_by_id.return_value = mock_exp
+    mock_lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=7)
+
+    # Topology containing client_telemetry.py and dependent components
+    graph_data = json.dumps({
+        "version": 1,
+        "nodes": [
+            {"id": "src/client/client_telemetry.py"},
+            {"id": "src/client/config.py"},
+            {"id": "src/client/api_client.py"},
+        ],
+        "edges": [
+            {"source": "src/client/config.py", "target": "src/client/client_telemetry.py", "kind": "import"},
+            {"source": "src/client/api_client.py", "target": "src/client/config.py", "kind": "import"},
+        ],
+    })
+    mock_snapshot = MagicMock(
+        spec=ArchitectureSnapshotModel,
+        id=205,
+        repository_id=42,
+        analysis_result_id=12,
+        snapshot_version=1,
+        graph=graph_data,
+        commit_sha="coodara123456",
+        score=MagicMock(spec=ArchitectureScore, maintainability=75.0, coupling=45.0, cohesion=65.0, complexity=30.0),
+        issues=[],
+    )
+    mock_arch_repo.get_latest_by_repository.return_value = mock_snapshot
+
+    mock_intervention = MagicMock(
+        spec=Intervention,
+        id=9,
+        hypothesis_id=7,
+        intervention_type=InterventionType.COMPATIBLE_REFACTOR.value,
+        target_component_ids=["src/client/client_telemetry.py"],
+        parameters={"description": "Isolate telemetry dependencies behind abstract sink interface"},
+    )
+    mock_lab_repo.get_intervention_by_id.return_value = mock_intervention
+
+    mock_run = MagicMock(
+        spec=ExperimentRun,
+        id=1,
+        experiment_id=15,
+        run_number=1,
+        status=ExperimentRunStatus.PENDING.value,
+        result_data={},
+    )
+    mock_lab_repo.get_experiment_run_by_id.return_value = mock_run
+
+    created_evidence: list[EvidenceItem] = []
+
+    async def _capture_evidence(item: EvidenceItem) -> EvidenceItem:
+        created_evidence.append(item)
+        item.id = len(created_evidence)
+        return item
+
+    mock_lab_repo.create_evidence_item.side_effect = _capture_evidence
+
+    executed_run = await service.execute_run(
+        organization_id=1,
+        repository_id=42,
+        experiment_id=15,
+        run_id=1,
+    )
+
+    assert executed_run.status == ExperimentRunStatus.COMPLETED.value
+    assert executed_run.error is None
+    assert executed_run.result_data is not None
+
+    res = executed_run.result_data
+    assert "metrics_before" in res
+    assert "metrics_after" in res
+    assert "differences" in res
+    assert res["metrics_before"]["components"] == 3
+    assert res["metrics_before"]["dependencies"] == 2
+
+    # Verify evidence items created with STATIC category
+    assert len(created_evidence) == 2
+    for item in created_evidence:
+        assert item.category == "STATIC"
+        assert item.repository_id == 42
+        assert item.experiment_id == 15
+        assert item.run_id == 1
+
+

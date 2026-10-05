@@ -293,7 +293,6 @@ class LabRepository:
     async def create_evidence_item(self, item: EvidenceItem) -> EvidenceItem:
         self.db.add(item)
         await self.db.flush()
-        await self.db.refresh(item)
         return item
 
     async def get_evidence_item_by_id(

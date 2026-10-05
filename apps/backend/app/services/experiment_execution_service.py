@@ -344,14 +344,14 @@ class ExperimentExecutionService:
                 "requested_reference": experiment.baseline_reference,
                 "resolution_method": (
                     "exact_snapshot_id"
-                    if experiment.baseline_reference.get("snapshot_id") is not None
+                    if isinstance(experiment.baseline_reference, dict) and experiment.baseline_reference.get("snapshot_id") is not None
                     else "explicit_latest_repository_snapshot"
                 ),
                 "resolved_at": start_time.isoformat(),
             }
             frozen_proposed_ref = {
                 "intervention_id": intervention.id if intervention else None,
-                "intervention_type": intervention_type,
+                "intervention_type": str(getattr(intervention_type, "value", intervention_type)),
                 "target_component_ids": target_components,
                 "parameters": parameters,
                 "requested_reference": experiment.proposed_reference,
@@ -430,28 +430,42 @@ class ExperimentExecutionService:
         except Exception as exc:
             end_time = datetime.now(timezone.utc)
             safe_msg = _safe_error_message(exc)
-            logger.error(
-                "Experiment run id=%d (experiment_id=%d) FAILED: %s",
+            logger.exception(
+                "Experiment run id=%d (experiment_id=%d) execution FAILED: %s",
                 run.id,
                 experiment.id,
-                safe_msg,
+                exc,
             )
 
-            # Persist FAILED state in database
+            # 1. Rollback the active transaction to clear any aborted / flush error state
             try:
-                run.status = ExperimentRunStatus.FAILED.value
-                run.completed_at = end_time
-                run.error = safe_msg
-                await self.lab_repo.update_experiment_run(run)
+                await self.db.rollback()
+            except Exception as rb_exc:
+                logger.warning("Session rollback failed for run id=%d: %s", run.id, rb_exc)
 
-                experiment.status = ExperimentStatus.FAILED.value
-                await self.lab_repo.update_experiment(experiment)
+            # 2. Persist FAILED state in a clean transaction
+            try:
+                failed_run = await self.lab_repo.get_experiment_run_by_id(run.id)
+                if failed_run is not None:
+                    failed_run.status = ExperimentRunStatus.FAILED.value
+                    failed_run.completed_at = end_time
+                    failed_run.error = safe_msg
+                    await self.lab_repo.update_experiment_run(failed_run)
+
+                failed_exp = await self.lab_repo.get_experiment_by_id(experiment.id)
+                if failed_exp is not None:
+                    failed_exp.status = ExperimentStatus.FAILED.value
+                    await self.lab_repo.update_experiment(failed_exp)
 
                 await self.db.commit()
+                logger.info("Successfully persisted FAILED state for run id=%d", run.id)
             except Exception as persist_exc:
                 logger.error("Failed to commit FAILED state for run id=%d: %s", run.id, persist_exc)
 
-            raise
+            # 3. Preserve original exception for caller and diagnostics
+            if isinstance(exc, ExperimentExecutionError):
+                raise
+            raise ExperimentExecutionError(f"Evaluation failed: {safe_msg}") from exc
 
     async def _resolve_baseline_snapshot(
         self,
