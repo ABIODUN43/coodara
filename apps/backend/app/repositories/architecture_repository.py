@@ -120,7 +120,6 @@ class ArchitectureRepository:
 
     async def get_latest_by_repository(
         self,
-        *,
         repository_id: int,
     ) -> ArchitectureSnapshot | None:
         """

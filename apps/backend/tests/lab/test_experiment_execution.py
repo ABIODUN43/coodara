@@ -15,10 +15,11 @@ Validates:
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 import pytest
 
 from app.models.architecture import ArchitectureScore, ArchitectureSnapshot as ArchitectureSnapshotModel
+from app.repositories.architecture_repository import ArchitectureRepository
 from app.models.lab import (
     EvidenceCategory,
     EvidenceItem,
@@ -758,5 +759,106 @@ async def test_execute_run_with_exact_client_telemetry_isolation_experiment() ->
         assert item.repository_id == 42
         assert item.experiment_id == 15
         assert item.run_id == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_run_with_latest_live_snapshot_autospec_signature_regression() -> None:
+    """
+    Regression Test:
+    Verifies that executing an experiment with baseline reference
+    {"type": "latest", "value": "HEAD (Live Snapshot)"} correctly invokes
+    ArchitectureRepository.get_latest_by_repository(repository_id=...)
+    matching the exact method signature (autospec enforced) without raising
+    TypeError / too many positional arguments.
+    """
+    mock_db = AsyncMock()
+    service = ExperimentExecutionService(mock_db)
+    service.lab_repo = AsyncMock()
+    service.repo_repo = AsyncMock()
+    # Strictly enforce ArchitectureRepository signature with autospec
+    service.arch_repo = create_autospec(ArchitectureRepository, instance=True)
+
+    mock_repo = MagicMock(spec=Repository, id=1, organization_id=10)
+    service.repo_repo.get_by_id.return_value = mock_repo
+
+    mock_exp = MagicMock(
+        spec=Experiment,
+        id=20,
+        hypothesis_id=5,
+        baseline_reference={"type": "latest", "value": "HEAD (Live Snapshot)"},
+        proposed_reference={"type": "proposed_intervention", "value": "Intervention Variant"},
+    )
+    service.lab_repo.get_experiment_by_id.return_value = mock_exp
+    service.lab_repo.get_hypothesis_by_id.return_value = MagicMock(spec=Hypothesis, id=5)
+
+    graph_data = json.dumps({
+        "version": 1,
+        "nodes": [
+            {"id": "clients/src/main/java/org/apache/kafka/common/telemetry/ClientTelemetry.java"},
+            {"id": "clients/src/main/java/org/apache/kafka/clients/CommonClientConfigs.java"},
+        ],
+        "edges": [
+            {
+                "source": "clients/src/main/java/org/apache/kafka/clients/CommonClientConfigs.java",
+                "target": "clients/src/main/java/org/apache/kafka/common/telemetry/ClientTelemetry.java",
+                "kind": "import",
+            }
+        ],
+    })
+    mock_snapshot = MagicMock(
+        spec=ArchitectureSnapshotModel,
+        id=100,
+        repository_id=1,
+        analysis_result_id=10,
+        snapshot_version=1,
+        graph=graph_data,
+        commit_sha="kafka-head-sha",
+        score=MagicMock(spec=ArchitectureScore, maintainability=75.0, coupling=40.0, cohesion=65.0, complexity=35.0),
+        issues=[],
+    )
+    service.arch_repo.get_latest_by_repository.return_value = mock_snapshot
+
+    mock_intervention = MagicMock(
+        spec=Intervention,
+        id=77,
+        hypothesis_id=5,
+        intervention_type=InterventionType.COMPATIBLE_REFACTOR.value,
+        target_component_ids=["clients/src/main/java/org/apache/kafka/common/telemetry/ClientTelemetry.java"],
+        parameters={"description": "Isolate client telemetry from common client configs"},
+    )
+    service.lab_repo.list_interventions.return_value = [mock_intervention]
+
+    mock_run = MagicMock(
+        spec=ExperimentRun,
+        id=1,
+        experiment_id=20,
+        run_number=1,
+        status=ExperimentRunStatus.PENDING.value,
+        result_data={},
+    )
+    service.lab_repo.get_experiment_run_by_id.return_value = mock_run
+    service.lab_repo.create_evidence_item.side_effect = lambda item: MagicMock(id=99, category=item.category)
+
+    executed_run = await service.execute_run(
+        organization_id=10,
+        repository_id=1,
+        experiment_id=20,
+        run_id=1,
+    )
+
+    # 1. State transition succeeded
+    assert executed_run.status == ExperimentRunStatus.COMPLETED.value
+    assert executed_run.error is None
+
+    # 2. Signature adherence verified via autospec call assertion
+    service.arch_repo.get_latest_by_repository.assert_awaited_once_with(repository_id=1)
+
+    # 3. Valid structural comparison results produced
+    assert executed_run.result_data["baseline_evaluated_reference"]["snapshot_id"] == 100
+    assert executed_run.result_data["proposed_evaluated_reference"]["intervention_id"] == 77
+    assert "metrics_before" in executed_run.result_data
+    assert "metrics_after" in executed_run.result_data
+    assert "differences" in executed_run.result_data
+
 
 

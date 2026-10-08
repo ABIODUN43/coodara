@@ -243,7 +243,9 @@ class ArchitectureMemoryService:
             offset=0,
             limit=200,
         )
-        latest_snapshot = await self.architecture_repository.get_latest_by_repository(repository_id)
+        latest_snapshot = await self.architecture_repository.get_latest_by_repository(
+            repository_id=repository_id,
+        )
         nodes: list[str] = []
         edges: list[dict[str, str]] = []
         if latest_snapshot and latest_snapshot.graph:

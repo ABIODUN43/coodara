@@ -486,7 +486,7 @@ class ExperimentExecutionService:
         """
         if not baseline_ref:
             # Explicit default when no specific reference provided
-            snapshot = await self.arch_repo.get_latest_by_repository(repository_id)
+            snapshot = await self.arch_repo.get_latest_by_repository(repository_id=repository_id)
             if snapshot is not None:
                 return snapshot
             raise BaselineArchitectureNotFoundError(
@@ -511,7 +511,7 @@ class ExperimentExecutionService:
             or baseline_ref.get("use_latest") is True
             or ref_val in ("HEAD", "HEAD (Default Branch)", "latest")
         ):
-            snapshot = await self.arch_repo.get_latest_by_repository(repository_id)
+            snapshot = await self.arch_repo.get_latest_by_repository(repository_id=repository_id)
             if snapshot is not None:
                 return snapshot
             raise BaselineArchitectureNotFoundError(
